@@ -341,7 +341,8 @@ class NetworkSession{
 		}catch(\Throwable $e){
 			Server::getInstance()->getLogger()->logException($e);
 
-			$this->getPlayer()->kick(TextFormat::colorize("§r§8[§6NF§8]\n§r§7An internal error has occured in the server.\n§r§7Please report this in the discord and mention when it happened."), false);
+			$this->disconnect("§r§8[§6NF§8]\n§r§7An internal error has occurred in the server.\n§r§7Please report this in the discord and mention when it happened.");
+
 			Server::getInstance()->getNetwork()->blockAddress($this->getIp(), 5);
 		}finally{
 			$timings->stopTiming();
