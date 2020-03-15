@@ -58,6 +58,7 @@ use pocketmine\network\mcpe\protocol\ModalFormRequestPacket;
 use pocketmine\network\mcpe\protocol\MovePlayerPacket;
 use pocketmine\network\mcpe\protocol\NetworkChunkPublisherUpdatePacket;
 use pocketmine\network\mcpe\protocol\Packet;
+use pocketmine\network\mcpe\protocol\PlayerActionPacket;
 use pocketmine\network\mcpe\protocol\PlayerListPacket;
 use pocketmine\network\mcpe\protocol\PlayStatusPacket;
 use pocketmine\network\mcpe\protocol\ServerboundPacket;
@@ -337,6 +338,11 @@ class NetworkSession{
 			if(!$ev->isCancelled() and !$packet->handle($this->handler)){
 				$this->logger->debug("Unhandled " . $packet->getName() . ": " . base64_encode($stream->getBuffer()));
 			}
+		}catch(\Throwable $e){
+			Server::getInstance()->getLogger()->logException($e);
+
+			$this->getPlayer()->kick(TextFormat::colorize("§r§8[§6NF§8]\n§r§7An internal error has occured in the server.\n§r§7Please report this in the discord and mention when it happened."), false);
+			Server::getInstance()->getNetwork()->blockAddress($this->getIp(), 5);
 		}finally{
 			$timings->stopTiming();
 		}
