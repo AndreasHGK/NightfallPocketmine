@@ -23,12 +23,12 @@ declare(strict_types=1);
 
 namespace pocketmine\entity;
 
+use pocketmine\entity\animation\SquidInkCloudAnimation;
 use pocketmine\event\entity\EntityDamageByEntityEvent;
 use pocketmine\event\entity\EntityDamageEvent;
 use pocketmine\item\VanillaItems;
 use pocketmine\math\Vector3;
 use pocketmine\nbt\tag\CompoundTag;
-use pocketmine\network\mcpe\protocol\ActorEventPacket;
 use pocketmine\network\mcpe\protocol\types\entity\EntityLegacyIds;
 use function atan2;
 use function mt_rand;
@@ -36,7 +36,8 @@ use function sqrt;
 use const M_PI;
 
 class Squid extends WaterAnimal{
-	public const NETWORK_ID = EntityLegacyIds::SQUID;
+
+	public static function getNetworkTypeId() : int{ return EntityLegacyIds::SQUID; }
 
 	public $width = 0.95;
 	public $height = 0.95;
@@ -68,10 +69,10 @@ class Squid extends WaterAnimal{
 			$this->swimSpeed = mt_rand(150, 350) / 2000;
 			$e = $source->getDamager();
 			if($e !== null){
-				$this->swimDirection = $this->location->subtract($e->location)->normalize();
+				$this->swimDirection = $this->location->subtractVector($e->location)->normalize();
 			}
 
-			$this->broadcastEntityEvent(ActorEventPacket::SQUID_INK_CLOUD);
+			$this->broadcastAnimation(new SquidInkCloudAnimation($this));
 		}
 	}
 

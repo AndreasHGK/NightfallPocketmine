@@ -26,8 +26,7 @@ namespace pocketmine\network\mcpe\protocol;
 #include <rules/DataPacket.h>
 
 use pocketmine\math\Vector3;
-use pocketmine\network\mcpe\handler\PacketHandler;
-use pocketmine\network\mcpe\serializer\NetworkBinaryStream;
+use pocketmine\network\mcpe\protocol\serializer\NetworkBinaryStream;
 
 /**
  * TODO: This packet is (erroneously) sent to the server when the client is riding a vehicle.
@@ -57,7 +56,7 @@ class SetActorMotionPacket extends DataPacket implements ClientboundPacket, Garb
 		$out->putVector3($this->motion);
 	}
 
-	public function handle(PacketHandler $handler) : bool{
+	public function handle(PacketHandlerInterface $handler) : bool{
 		return $handler->handleSetActorMotion($this);
 	}
 }

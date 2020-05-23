@@ -25,9 +25,8 @@ namespace pocketmine\network\mcpe\protocol;
 
 #include <rules/DataPacket.h>
 
-use pocketmine\entity\Attribute;
-use pocketmine\network\mcpe\handler\PacketHandler;
-use pocketmine\network\mcpe\serializer\NetworkBinaryStream;
+use pocketmine\network\mcpe\protocol\serializer\NetworkBinaryStream;
+use pocketmine\network\mcpe\protocol\types\entity\Attribute;
 use function array_values;
 
 class UpdateAttributesPacket extends DataPacket implements ClientboundPacket{
@@ -60,7 +59,7 @@ class UpdateAttributesPacket extends DataPacket implements ClientboundPacket{
 		$out->putAttributeList(...array_values($this->entries));
 	}
 
-	public function handle(PacketHandler $handler) : bool{
+	public function handle(PacketHandlerInterface $handler) : bool{
 		return $handler->handleUpdateAttributes($this);
 	}
 }

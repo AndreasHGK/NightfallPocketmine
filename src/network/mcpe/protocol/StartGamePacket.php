@@ -27,24 +27,17 @@ namespace pocketmine\network\mcpe\protocol;
 
 use pocketmine\math\Vector3;
 use pocketmine\nbt\tag\ListTag;
-use pocketmine\nbt\TreeRoot;
-use pocketmine\network\mcpe\handler\PacketHandler;
+use pocketmine\network\mcpe\protocol\serializer\NetworkBinaryStream;
+use pocketmine\network\mcpe\protocol\types\CacheableNbt;
+use pocketmine\network\mcpe\protocol\types\EducationEditionOffer;
+use pocketmine\network\mcpe\protocol\types\GameRuleType;
+use pocketmine\network\mcpe\protocol\types\GeneratorType;
+use pocketmine\network\mcpe\protocol\types\MultiplayerGameVisibility;
 use pocketmine\network\mcpe\protocol\types\PlayerPermissions;
-use pocketmine\network\mcpe\protocol\types\RuntimeBlockMapping;
-use pocketmine\network\mcpe\serializer\NetworkBinaryStream;
-use pocketmine\network\mcpe\serializer\NetworkNbtSerializer;
 use function count;
-use function file_get_contents;
-use function json_decode;
-use const pocketmine\RESOURCE_PATH;
 
 class StartGamePacket extends DataPacket implements ClientboundPacket{
 	public const NETWORK_ID = ProtocolInfo::START_GAME_PACKET;
-
-	/** @var string|null */
-	private static $blockTableCache = null;
-	/** @var string|null */
-	private static $itemTableCache = null;
 
 	/** @var int */
 	public $entityUniqueId;
@@ -66,7 +59,7 @@ class StartGamePacket extends DataPacket implements ClientboundPacket{
 	/** @var int */
 	public $dimension;
 	/** @var int */
-	public $generator = 1; //default infinite - 0 old, 1 infinite, 2 flat
+	public $generator = GeneratorType::OVERWORLD;
 	/** @var int */
 	public $worldGamemode;
 	/** @var int */
@@ -82,7 +75,7 @@ class StartGamePacket extends DataPacket implements ClientboundPacket{
 	/** @var int */
 	public $time = -1;
 	/** @var int */
-	public $eduEditionOffer = 0;
+	public $eduEditionOffer = EducationEditionOffer::NONE;
 	/** @var bool */
 	public $hasEduFeaturesEnabled = false;
 	/** @var float */
@@ -96,9 +89,9 @@ class StartGamePacket extends DataPacket implements ClientboundPacket{
 	/** @var bool */
 	public $hasLANBroadcast = true;
 	/** @var int */
-	public $xboxLiveBroadcastMode = 0; //TODO: find values
+	public $xboxLiveBroadcastMode = MultiplayerGameVisibility::PUBLIC;
 	/** @var int */
-	public $platformBroadcastMode = 0;
+	public $platformBroadcastMode = MultiplayerGameVisibility::PUBLIC;
 	/** @var bool */
 	public $commandsEnabled;
 	/** @var bool */
@@ -108,7 +101,7 @@ class StartGamePacket extends DataPacket implements ClientboundPacket{
 	 * @phpstan-var array<string, array{0: int, 1: bool|int|float}>
 	 */
 	public $gameRules = [ //TODO: implement this
-		"naturalregeneration" => [1, false] //Hack for client side regeneration
+		"naturalregeneration" => [GameRuleType::BOOL, false] //Hack for client side regeneration
 	];
 	/** @var bool */
 	public $hasBonusChestEnabled = false;
@@ -154,13 +147,16 @@ class StartGamePacket extends DataPacket implements ClientboundPacket{
 	/** @var string */
 	public $multiplayerCorrelationId = ""; //TODO: this should be filled with a UUID of some sort
 
-	/** @var ListTag|null */
-	public $blockTable = null;
 	/**
-	 * @var int[]|null string (name) => int16 (legacyID)
-	 * @phpstan-var array<string, int>|null
+	 * @var CacheableNbt
+	 * @phpstan-var CacheableNbt<\pocketmine\nbt\tag\ListTag>
 	 */
-	public $itemTable = null;
+	public $blockTable;
+	/**
+	 * @var int[] string (name) => int16 (legacyID)
+	 * @phpstan-var array<string, int>
+	 */
+	public $itemTable = [];
 
 	protected function decodePayload(NetworkBinaryStream $in) : void{
 		$this->entityUniqueId = $in->getEntityUniqueId();
@@ -215,13 +211,11 @@ class StartGamePacket extends DataPacket implements ClientboundPacket{
 
 		$this->enchantmentSeed = $in->getVarInt();
 
-		$offset = $in->getOffset();
-		$blockTable = (new NetworkNbtSerializer())->read($in->getBuffer(), $offset, 512)->getTag();
-		$in->setOffset($offset);
+		$blockTable = $in->getNbtRoot()->getTag();
 		if(!($blockTable instanceof ListTag)){
 			throw new \UnexpectedValueException("Wrong block table root NBT tag type");
 		}
-		$this->blockTable = $blockTable;
+		$this->blockTable = new CacheableNbt($blockTable);
 
 		$this->itemTable = [];
 		for($i = 0, $count = $in->getUnsignedVarInt(); $i < $count; ++$i){
@@ -287,23 +281,9 @@ class StartGamePacket extends DataPacket implements ClientboundPacket{
 
 		$out->putVarInt($this->enchantmentSeed);
 
-		if($this->blockTable === null){
-			if(self::$blockTableCache === null){
-				//this is a really nasty hack, but it'll do for now
-				self::$blockTableCache = (new NetworkNbtSerializer())->write(new TreeRoot(new ListTag(RuntimeBlockMapping::getBedrockKnownStates())));
-			}
-			$out->put(self::$blockTableCache);
-		}else{
-			$out->put((new NetworkNbtSerializer())->write(new TreeRoot($this->blockTable)));
-		}
-		if($this->itemTable === null){
-			if(self::$itemTableCache === null){
-				self::$itemTableCache = self::serializeItemTable(json_decode(file_get_contents(RESOURCE_PATH . '/vanilla/item_id_map.json'), true));
-			}
-			$out->put(self::$itemTableCache);
-		}else{
-			$out->put(self::serializeItemTable($this->itemTable));
-		}
+		$out->put($this->blockTable->getEncodedNbt());
+
+		$out->put(self::serializeItemTable($this->itemTable));
 
 		$out->putString($this->multiplayerCorrelationId);
 	}
@@ -322,7 +302,7 @@ class StartGamePacket extends DataPacket implements ClientboundPacket{
 		return $stream->getBuffer();
 	}
 
-	public function handle(PacketHandler $handler) : bool{
+	public function handle(PacketHandlerInterface $handler) : bool{
 		return $handler->handleStartGame($this);
 	}
 }

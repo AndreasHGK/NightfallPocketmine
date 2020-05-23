@@ -25,15 +25,13 @@ namespace pocketmine\network\mcpe\protocol;
 
 #include <rules/DataPacket.h>
 
-use pocketmine\network\BadPacketException;
-use pocketmine\network\mcpe\handler\PacketHandler;
+use pocketmine\network\mcpe\protocol\serializer\NetworkBinaryStream;
 use pocketmine\network\mcpe\protocol\types\inventory\MismatchTransactionData;
 use pocketmine\network\mcpe\protocol\types\inventory\NormalTransactionData;
 use pocketmine\network\mcpe\protocol\types\inventory\ReleaseItemTransactionData;
 use pocketmine\network\mcpe\protocol\types\inventory\TransactionData;
 use pocketmine\network\mcpe\protocol\types\inventory\UseItemOnEntityTransactionData;
 use pocketmine\network\mcpe\protocol\types\inventory\UseItemTransactionData;
-use pocketmine\network\mcpe\serializer\NetworkBinaryStream;
 
 /**
  * This packet effectively crams multiple packets into one.
@@ -70,7 +68,7 @@ class InventoryTransactionPacket extends DataPacket implements ClientboundPacket
 				$this->trData = new ReleaseItemTransactionData();
 				break;
 			default:
-				throw new BadPacketException("Unknown transaction type $transactionType");
+				throw new PacketDecodeException("Unknown transaction type $transactionType");
 		}
 
 		$this->trData->decode($in);
@@ -81,7 +79,7 @@ class InventoryTransactionPacket extends DataPacket implements ClientboundPacket
 		$this->trData->encode($out);
 	}
 
-	public function handle(PacketHandler $handler) : bool{
+	public function handle(PacketHandlerInterface $handler) : bool{
 		return $handler->handleInventoryTransaction($this);
 	}
 }

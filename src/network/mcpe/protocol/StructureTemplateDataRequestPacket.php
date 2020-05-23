@@ -25,9 +25,8 @@ namespace pocketmine\network\mcpe\protocol;
 
 #include <rules/DataPacket.h>
 
-use pocketmine\network\mcpe\handler\PacketHandler;
+use pocketmine\network\mcpe\protocol\serializer\NetworkBinaryStream;
 use pocketmine\network\mcpe\protocol\types\StructureSettings;
-use pocketmine\network\mcpe\serializer\NetworkBinaryStream;
 
 class StructureTemplateDataRequestPacket extends DataPacket implements ServerboundPacket{
 	public const NETWORK_ID = ProtocolInfo::STRUCTURE_TEMPLATE_DATA_REQUEST_PACKET;
@@ -62,7 +61,7 @@ class StructureTemplateDataRequestPacket extends DataPacket implements Serverbou
 		$out->putByte($this->structureTemplateResponseType);
 	}
 
-	public function handle(PacketHandler $handler) : bool{
+	public function handle(PacketHandlerInterface $handler) : bool{
 		return $handler->handleStructureTemplateDataRequest($this);
 	}
 }

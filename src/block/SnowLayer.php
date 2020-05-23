@@ -91,8 +91,8 @@ class SnowLayer extends Flowable implements Fallable{
 	}
 
 	public function onRandomTick() : void{
-		if($this->pos->getWorld()->getBlockLightAt($this->pos->x, $this->pos->y, $this->pos->z) >= 12){
-			$this->pos->getWorld()->setBlock($this->pos, VanillaBlocks::AIR(), false);
+		if($this->pos->getWorldNonNull()->getBlockLightAt($this->pos->x, $this->pos->y, $this->pos->z) >= 12){
+			$this->pos->getWorldNonNull()->setBlock($this->pos, VanillaBlocks::AIR(), false);
 		}
 	}
 
@@ -104,9 +104,5 @@ class SnowLayer extends Flowable implements Fallable{
 		return [
 			VanillaItems::SNOWBALL()->setCount(max(1, (int) floor($this->layers / 2)))
 		];
-	}
-
-	public function isAffectedBySilkTouch() : bool{
-		return false;
 	}
 }

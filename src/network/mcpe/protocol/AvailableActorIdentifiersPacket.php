@@ -25,33 +25,36 @@ namespace pocketmine\network\mcpe\protocol;
 
 #include <rules/DataPacket.h>
 
-use pocketmine\network\mcpe\handler\PacketHandler;
-use pocketmine\network\mcpe\serializer\NetworkBinaryStream;
-use function base64_decode;
-use function file_get_contents;
+use pocketmine\network\mcpe\protocol\serializer\NetworkBinaryStream;
+use pocketmine\network\mcpe\protocol\types\CacheableNbt;
 
 class AvailableActorIdentifiersPacket extends DataPacket implements ClientboundPacket{
 	public const NETWORK_ID = ProtocolInfo::AVAILABLE_ACTOR_IDENTIFIERS_PACKET;
 
-	/** @var string|null */
-	private static $DEFAULT_NBT_CACHE = null;
+	/**
+	 * @var CacheableNbt
+	 * @phpstan-var CacheableNbt<\pocketmine\nbt\tag\CompoundTag>
+	 */
+	public $identifiers;
 
-	/** @var string */
-	public $namedtag;
+	/**
+	 * @phpstan-param CacheableNbt<\pocketmine\nbt\tag\CompoundTag> $nbt
+	 */
+	public static function create(CacheableNbt $nbt) : self{
+		$result = new self;
+		$result->identifiers = $nbt;
+		return $result;
+	}
 
 	protected function decodePayload(NetworkBinaryStream $in) : void{
-		$this->namedtag = $in->getRemaining();
+		$this->identifiers = new CacheableNbt($in->getNbtCompoundRoot());
 	}
 
 	protected function encodePayload(NetworkBinaryStream $out) : void{
-		$out->put(
-			$this->namedtag ??
-			self::$DEFAULT_NBT_CACHE ??
-			(self::$DEFAULT_NBT_CACHE = file_get_contents(\pocketmine\RESOURCE_PATH . '/vanilla/entity_identifiers.nbt'))
-		);
+		$out->put($this->identifiers->getEncodedNbt());
 	}
 
-	public function handle(PacketHandler $handler) : bool{
+	public function handle(PacketHandlerInterface $handler) : bool{
 		return $handler->handleAvailableActorIdentifiers($this);
 	}
 }

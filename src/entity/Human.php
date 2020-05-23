@@ -23,12 +23,13 @@ declare(strict_types=1);
 
 namespace pocketmine\entity;
 
+use pocketmine\block\inventory\EnderChestInventory;
+use pocketmine\entity\animation\TotemUseAnimation;
 use pocketmine\entity\effect\EffectInstance;
 use pocketmine\entity\effect\VanillaEffects;
 use pocketmine\entity\projectile\ProjectileSource;
 use pocketmine\event\entity\EntityDamageEvent;
 use pocketmine\event\player\PlayerExhaustEvent;
-use pocketmine\inventory\EnderChestInventory;
 use pocketmine\inventory\InventoryHolder;
 use pocketmine\inventory\PlayerInventory;
 use pocketmine\item\Consumable;
@@ -41,7 +42,8 @@ use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\nbt\tag\IntTag;
 use pocketmine\nbt\tag\ListTag;
 use pocketmine\nbt\tag\StringTag;
-use pocketmine\network\mcpe\protocol\ActorEventPacket;
+use pocketmine\network\mcpe\convert\SkinAdapterSingleton;
+use pocketmine\network\mcpe\convert\TypeConverter;
 use pocketmine\network\mcpe\protocol\AddPlayerPacket;
 use pocketmine\network\mcpe\protocol\MovePlayerPacket;
 use pocketmine\network\mcpe\protocol\PlayerListPacket;
@@ -49,10 +51,9 @@ use pocketmine\network\mcpe\protocol\PlayerSkinPacket;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataProperties;
 use pocketmine\network\mcpe\protocol\types\entity\StringMetadataProperty;
 use pocketmine\network\mcpe\protocol\types\PlayerListEntry;
-use pocketmine\network\mcpe\protocol\types\SkinAdapterSingleton;
 use pocketmine\player\Player;
 use pocketmine\utils\Limits;
-use pocketmine\utils\UUID;
+use pocketmine\uuid\UUID;
 use pocketmine\world\sound\TotemUseSound;
 use pocketmine\world\World;
 use function array_filter;
@@ -64,6 +65,10 @@ use function random_int;
 use function strlen;
 
 class Human extends Living implements ProjectileSource, InventoryHolder{
+
+	public static function getNetworkTypeId() : int{
+		return -1; //TODO: ideally we shouldn't have to specify this at all here ...
+	}
 
 	/** @var PlayerInventory */
 	protected $inventory;
@@ -220,8 +225,8 @@ class Human extends Living implements ProjectileSource, InventoryHolder{
 
 		$inventoryTag = $nbt->getListTag("Inventory");
 		if($inventoryTag !== null){
-			$armorListeners = $this->armorInventory->getChangeListeners();
-			$this->armorInventory->removeChangeListeners(...$armorListeners);
+			$armorListeners = $this->armorInventory->getListeners()->toArray();
+			$this->armorInventory->getListeners()->clear();
 
 			/** @var CompoundTag $item */
 			foreach($inventoryTag as $i => $item){
@@ -235,7 +240,7 @@ class Human extends Living implements ProjectileSource, InventoryHolder{
 				}
 			}
 
-			$this->armorInventory->addChangeListeners(...$armorListeners);
+			$this->armorInventory->getListeners()->add(...$armorListeners);
 		}
 
 		$enderChestInventoryTag = $nbt->getListTag("EnderChestInventory");
@@ -302,7 +307,7 @@ class Human extends Living implements ProjectileSource, InventoryHolder{
 			$this->effectManager->add(new EffectInstance(VanillaEffects::FIRE_RESISTANCE(), 40 * 20, 1));
 			$this->effectManager->add(new EffectInstance(VanillaEffects::ABSORPTION(), 5 * 20, 1));
 
-			$this->broadcastEntityEvent(ActorEventPacket::CONSUME_TOTEM);
+			$this->broadcastAnimation(new TotemUseAnimation($this));
 			$this->getWorld()->addSound($this->location->add(0, $this->eyeHeight, 0), new TotemUseSound());
 
 			$hand = $this->inventory->getItemInHand();
@@ -403,7 +408,7 @@ class Human extends Living implements ProjectileSource, InventoryHolder{
 		$pk->motion = $this->getMotion();
 		$pk->yaw = $this->location->yaw;
 		$pk->pitch = $this->location->pitch;
-		$pk->item = $this->getInventory()->getItemInHand();
+		$pk->item = TypeConverter::getInstance()->coreItemStackToNet($this->getInventory()->getItemInHand());
 		$pk->metadata = $this->getSyncedNetworkData(false);
 		$player->getNetworkSession()->sendDataPacket($pk);
 

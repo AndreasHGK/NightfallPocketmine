@@ -25,7 +25,9 @@ namespace pocketmine\network\mcpe\raklib;
 
 use pocketmine\network\AdvancedNetworkInterface;
 use pocketmine\network\BadPacketException;
+use pocketmine\network\mcpe\compression\ZlibCompressor;
 use pocketmine\network\mcpe\NetworkSession;
+use pocketmine\network\mcpe\protocol\PacketPool;
 use pocketmine\network\mcpe\protocol\ProtocolInfo;
 use pocketmine\network\Network;
 use pocketmine\Server;
@@ -34,21 +36,21 @@ use pocketmine\utils\Filesystem;
 use pocketmine\utils\Utils;
 use raklib\protocol\EncapsulatedPacket;
 use raklib\protocol\PacketReliability;
-use raklib\RakLib;
-use raklib\server\RakLibServer;
-use raklib\server\ServerHandler;
-use raklib\server\ServerInstance;
+use raklib\server\ipc\RakLibToUserThreadMessageReceiver;
+use raklib\server\ipc\UserToRakLibThreadMessageSender;
+use raklib\server\ServerEventListener;
 use raklib\utils\InternetAddress;
 use function addcslashes;
 use function bin2hex;
 use function implode;
+use function mt_rand;
 use function random_bytes;
 use function rtrim;
 use function substr;
 use function unserialize;
 use const PTHREADS_INHERIT_CONSTANTS;
 
-class RakLibInterface implements ServerInstance, AdvancedNetworkInterface{
+class RakLibInterface implements ServerEventListener, AdvancedNetworkInterface{
 	/**
 	 * Sometimes this gets changed when the MCPE-layer protocol gets broken to the point where old and new can't
 	 * communicate. It's important that we check this to avoid catastrophes.
@@ -63,13 +65,18 @@ class RakLibInterface implements ServerInstance, AdvancedNetworkInterface{
 	/** @var Network */
 	private $network;
 
+	/** @var int */
+	private $rakServerId;
+
 	/** @var RakLibServer */
 	private $rakLib;
 
 	/** @var NetworkSession[] */
 	private $sessions = [];
 
-	/** @var ServerHandler */
+	/** @var RakLibToUserThreadMessageReceiver */
+	private $eventReceiver;
+	/** @var UserToRakLibThreadMessageSender */
 	private $interface;
 
 	/** @var SleeperNotifier */
@@ -77,23 +84,34 @@ class RakLibInterface implements ServerInstance, AdvancedNetworkInterface{
 
 	public function __construct(Server $server){
 		$this->server = $server;
+		$this->rakServerId = mt_rand(0, PHP_INT_MAX);
 
 		$this->sleeper = new SleeperNotifier();
 
+		$mainToThreadBuffer = new \Threaded;
+		$threadToMainBuffer = new \Threaded;
+
 		$this->rakLib = new RakLibServer(
 			$this->server->getLogger(),
-			\pocketmine\COMPOSER_AUTOLOADER_PATH,
+			$mainToThreadBuffer,
+			$threadToMainBuffer,
 			new InternetAddress($this->server->getIp(), $this->server->getPort(), 4),
+			$this->rakServerId,
 			(int) $this->server->getProperty("network.max-mtu-size", 1492),
 			self::MCPE_RAKNET_PROTOCOL_VERSION,
 			$this->sleeper
 		);
-		$this->interface = new ServerHandler($this->rakLib, $this);
+		$this->eventReceiver = new RakLibToUserThreadMessageReceiver(
+			new PthreadsChannelReader($threadToMainBuffer)
+		);
+		$this->interface = new UserToRakLibThreadMessageSender(
+			new PthreadsChannelWriter($mainToThreadBuffer)
+		);
 	}
 
 	public function start() : void{
 		$this->server->getTickSleeper()->addNotifier($this->sleeper, function() : void{
-			while($this->interface->handlePacket());
+			while($this->eventReceiver->handle($this));
 		});
 		$this->server->getLogger()->debug("Waiting for RakLib to start...");
 		$this->rakLib->startAndWait(PTHREADS_INHERIT_CONSTANTS); //HACK: MainLogger needs constants for exception logging
@@ -105,7 +123,7 @@ class RakLibInterface implements ServerInstance, AdvancedNetworkInterface{
 	}
 
 	public function tick() : void{
-		if(!$this->rakLib->isRunning() and !$this->rakLib->isShutdown()){
+		if(!$this->rakLib->isRunning()){
 			$e = $this->rakLib->getCrashInfo();
 			if($e !== null){
 				throw $e;
@@ -122,32 +140,41 @@ class RakLibInterface implements ServerInstance, AdvancedNetworkInterface{
 		}
 	}
 
-	public function close(int $sessionId, string $reason = "unknown reason") : void{
+	public function close(int $sessionId) : void{
 		if(isset($this->sessions[$sessionId])){
 			unset($this->sessions[$sessionId]);
-			$this->interface->closeSession($sessionId, $reason);
+			$this->interface->closeSession($sessionId);
 		}
 	}
 
 	public function shutdown() : void{
 		$this->server->getTickSleeper()->removeNotifier($this->sleeper);
 		$this->interface->shutdown();
+		$this->rakLib->quit();
 	}
 
 	public function openSession(int $sessionId, string $address, int $port, int $clientID) : void{
-		$session = new NetworkSession($this->server, $this->network->getSessionManager(), new RakLibPacketSender($sessionId, $this), $address, $port);
+		$session = new NetworkSession(
+			$this->server,
+			$this->network->getSessionManager(),
+			PacketPool::getInstance(),
+			new RakLibPacketSender($sessionId, $this),
+			ZlibCompressor::getInstance(), //TODO: this shouldn't be hardcoded, but we might need the RakNet protocol version to select it
+			$address,
+			$port
+		);
 		$this->sessions[$sessionId] = $session;
 	}
 
-	public function handleEncapsulated(int $sessionId, EncapsulatedPacket $packet, int $flags) : void{
+	public function handleEncapsulated(int $sessionId, string $packet) : void{
 		if(isset($this->sessions[$sessionId])){
-			if($packet->buffer === "" or $packet->buffer{0} !== self::MCPE_RAKNET_PACKET_ID){
+			if($packet === "" or $packet[0] !== self::MCPE_RAKNET_PACKET_ID){
 				return;
 			}
 			//get this now for blocking in case the player was closed before the exception was raised
 			$session = $this->sessions[$sessionId];
 			$address = $session->getIp();
-			$buf = substr($packet->buffer, 1);
+			$buf = substr($packet, 1);
 			try{
 				$session->handleEncoded($buf);
 			}catch(BadPacketException $e){
@@ -194,7 +221,7 @@ class RakLibInterface implements ServerInstance, AdvancedNetworkInterface{
 	public function setName(string $name) : void{
 		$info = $this->server->getQueryInformation();
 
-		$this->interface->sendOption("name", implode(";",
+		$this->interface->setOption("name", implode(";",
 			[
 				"MCPE",
 				rtrim(addcslashes($name, ";"), '\\'),
@@ -202,7 +229,7 @@ class RakLibInterface implements ServerInstance, AdvancedNetworkInterface{
 				ProtocolInfo::MINECRAFT_VERSION_NETWORK,
 				$info->getPlayerCount(),
 				$info->getMaxPlayerCount(),
-				$this->rakLib->getServerId(),
+				$this->rakServerId,
 				$this->server->getName(),
 				$this->server->getGamemode()->getEnglishName()
 			]) . ";"
@@ -210,7 +237,11 @@ class RakLibInterface implements ServerInstance, AdvancedNetworkInterface{
 	}
 
 	public function setPortCheck(bool $name) : void{
-		$this->interface->sendOption("portChecking", $name);
+		$this->interface->setOption("portChecking", $name);
+	}
+
+	public function setPacketLimit(int $limit) : void{
+		$this->interface->setOption("packetLimit", $limit);
 	}
 
 	public function handleOption(string $option, string $value) : void{
@@ -227,7 +258,7 @@ class RakLibInterface implements ServerInstance, AdvancedNetworkInterface{
 			$pk->reliability = PacketReliability::RELIABLE_ORDERED;
 			$pk->orderChannel = 0;
 
-			$this->interface->sendEncapsulated($sessionId, $pk, ($immediate ? RakLib::PRIORITY_IMMEDIATE : RakLib::PRIORITY_NORMAL));
+			$this->interface->sendEncapsulated($sessionId, $pk, $immediate);
 		}
 	}
 

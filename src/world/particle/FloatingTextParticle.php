@@ -25,8 +25,8 @@ namespace pocketmine\world\particle;
 
 use pocketmine\entity\EntityFactory;
 use pocketmine\entity\Skin;
-use pocketmine\item\ItemFactory;
 use pocketmine\math\Vector3;
+use pocketmine\network\mcpe\convert\SkinAdapterSingleton;
 use pocketmine\network\mcpe\protocol\AddPlayerPacket;
 use pocketmine\network\mcpe\protocol\PlayerListPacket;
 use pocketmine\network\mcpe\protocol\RemoveActorPacket;
@@ -34,9 +34,9 @@ use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataFlags;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataProperties;
 use pocketmine\network\mcpe\protocol\types\entity\FloatMetadataProperty;
 use pocketmine\network\mcpe\protocol\types\entity\LongMetadataProperty;
+use pocketmine\network\mcpe\protocol\types\inventory\ItemStack;
 use pocketmine\network\mcpe\protocol\types\PlayerListEntry;
-use pocketmine\network\mcpe\protocol\types\SkinAdapterSingleton;
-use pocketmine\utils\UUID;
+use pocketmine\uuid\UUID;
 use function str_repeat;
 
 class FloatingTextParticle implements Particle{
@@ -100,7 +100,7 @@ class FloatingTextParticle implements Particle{
 			$pk->username = $name;
 			$pk->entityRuntimeId = $this->entityId;
 			$pk->position = $pos; //TODO: check offset
-			$pk->item = ItemFactory::air();
+			$pk->item = ItemStack::null();
 
 			$flags = (
 				1 << EntityMetadataFlags::IMMOBILE

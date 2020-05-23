@@ -24,7 +24,8 @@ declare(strict_types=1);
 namespace pocketmine\network\mcpe\serializer;
 
 use pocketmine\block\tile\Spawnable;
-use pocketmine\network\mcpe\protocol\types\RuntimeBlockMapping;
+use pocketmine\network\mcpe\convert\RuntimeBlockMapping;
+use pocketmine\network\mcpe\protocol\serializer\NetworkBinaryStream;
 use pocketmine\utils\BinaryStream;
 use pocketmine\world\format\Chunk;
 use function count;
@@ -50,7 +51,7 @@ final class ChunkSerializer{
 		return 0;
 	}
 
-	public static function serialize(Chunk $chunk, ?string $tiles = null) : string{
+	public static function serialize(Chunk $chunk, RuntimeBlockMapping $blockMapper, ?string $tiles = null) : string{
 		$stream = new NetworkBinaryStream();
 		$subChunkCount = self::getSubChunkCount($chunk);
 		for($y = 0; $y < $subChunkCount; ++$y){
@@ -63,9 +64,13 @@ final class ChunkSerializer{
 				$stream->putByte(($blocks->getBitsPerBlock() << 1) | 1); //last 1-bit means "network format", but seems pointless
 				$stream->put($blocks->getWordArray());
 				$palette = $blocks->getPalette();
-				$stream->putVarInt(count($palette)); //yes, this is intentionally zigzag
+
+				//these LSHIFT by 1 uvarints are optimizations: the client expects zigzag varints here
+				//but since we know they are always unsigned, we can avoid the extra fcall overhead of
+				//zigzag and just shift directly.
+				$stream->putUnsignedVarInt(count($palette) << 1); //yes, this is intentionally zigzag
 				foreach($palette as $p){
-					$stream->putVarInt(RuntimeBlockMapping::toStaticRuntimeId($p >> 4, $p & 0xf));
+					$stream->putUnsignedVarInt($blockMapper->toRuntimeId($p >> 4, $p & 0xf) << 1);
 				}
 			}
 		}
@@ -85,7 +90,7 @@ final class ChunkSerializer{
 		$stream = new BinaryStream();
 		foreach($chunk->getTiles() as $tile){
 			if($tile instanceof Spawnable){
-				$stream->put($tile->getSerializedSpawnCompound());
+				$stream->put($tile->getSerializedSpawnCompound()->getEncodedNbt());
 			}
 		}
 

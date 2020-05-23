@@ -28,6 +28,8 @@ namespace pocketmine\entity;
 
 use pocketmine\block\Block;
 use pocketmine\block\Water;
+use pocketmine\data\bedrock\LegacyEntityIdToStringIdMap;
+use pocketmine\entity\animation\Animation;
 use pocketmine\event\entity\EntityDamageEvent;
 use pocketmine\event\entity\EntityDespawnEvent;
 use pocketmine\event\entity\EntityMotionEvent;
@@ -43,13 +45,10 @@ use pocketmine\nbt\tag\DoubleTag;
 use pocketmine\nbt\tag\FloatTag;
 use pocketmine\nbt\tag\ListTag;
 use pocketmine\nbt\tag\StringTag;
-use pocketmine\network\mcpe\protocol\ActorEventPacket;
 use pocketmine\network\mcpe\protocol\AddActorPacket;
-use pocketmine\network\mcpe\protocol\AnimatePacket;
 use pocketmine\network\mcpe\protocol\MoveActorAbsolutePacket;
-use pocketmine\network\mcpe\protocol\RemoveActorPacket;
-use pocketmine\network\mcpe\protocol\SetActorDataPacket;
 use pocketmine\network\mcpe\protocol\SetActorMotionPacket;
+use pocketmine\network\mcpe\protocol\types\entity\Attribute as NetworkAttribute;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataCollection;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataFlags;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataProperties;
@@ -62,6 +61,7 @@ use pocketmine\world\format\Chunk;
 use pocketmine\world\Position;
 use pocketmine\world\World;
 use function abs;
+use function array_map;
 use function assert;
 use function cos;
 use function count;
@@ -80,8 +80,6 @@ abstract class Entity{
 
 	public const MOTION_THRESHOLD = 0.00001;
 
-	public const NETWORK_ID = -1;
-
 	/** @var Player[] */
 	protected $hasSpawned = [];
 
@@ -89,7 +87,7 @@ abstract class Entity{
 	protected $id;
 
 	/** @var EntityMetadataCollection */
-	protected $networkProperties;
+	private $networkProperties;
 
 	/** @var Chunk|null */
 	public $chunk;
@@ -211,10 +209,6 @@ abstract class Entity{
 	protected $immobile = false;
 	/** @var bool */
 	protected $invisible = false;
-	/** @var bool */
-	protected $sneaking = false;
-	/** @var bool */
-	protected $sprinting = false;
 
 	/** @var int|null */
 	protected $ownerId = null;
@@ -347,26 +341,6 @@ abstract class Entity{
 		);
 	}
 
-	public function isSneaking() : bool{
-		return $this->sneaking;
-	}
-
-	public function setSneaking(bool $value = true) : void{
-		$this->sneaking = $value;
-	}
-
-	public function isSprinting() : bool{
-		return $this->sprinting;
-	}
-
-	public function setSprinting(bool $value = true) : void{
-		if($value !== $this->isSprinting()){
-			$this->sprinting = $value;
-			$attr = $this->attributeMap->get(Attribute::MOVEMENT_SPEED);
-			$attr->setValue($value ? ($attr->getValue() * 1.3) : ($attr->getValue() / 1.3), false, true);
-		}
-	}
-
 	public function isImmobile() : bool{
 		return $this->immobile;
 	}
@@ -488,7 +462,7 @@ abstract class Entity{
 	public function saveNBT() : CompoundTag{
 		$nbt = new CompoundTag();
 		if(!($this instanceof Player)){
-			$nbt->setString("id", EntityFactory::getSaveId(get_class($this)));
+			$nbt->setString("id", EntityFactory::getInstance()->getSaveId(get_class($this)));
 
 			if($this->getNameTag() !== ""){
 				$nbt->setString("CustomName", $this->getNameTag());
@@ -748,7 +722,7 @@ abstract class Entity{
 		$diffPosition = $this->location->distanceSquared($this->lastLocation);
 		$diffRotation = ($this->location->yaw - $this->lastLocation->yaw) ** 2 + ($this->location->pitch - $this->lastLocation->pitch) ** 2;
 
-		$diffMotion = $this->motion->subtract($this->lastMotion)->lengthSquared();
+		$diffMotion = $this->motion->subtractVector($this->lastMotion)->lengthSquared();
 
 		$still = $this->motion->lengthSquared() == 0.0;
 		$wasStill = $this->lastMotion->lengthSquared() == 0.0;
@@ -1331,7 +1305,7 @@ abstract class Entity{
 	}
 
 	public function getWorld() : World{
-		return $this->location->getWorld();
+		return $this->location->getWorldNonNull();
 	}
 
 	protected function setPosition(Vector3 $pos) : bool{
@@ -1339,8 +1313,8 @@ abstract class Entity{
 			return false;
 		}
 
-		if($pos instanceof Position and $pos->world !== null and $pos->world !== $this->getWorld()){
-			if(!$this->switchWorld($pos->getWorld())){
+		if($pos instanceof Position and $pos->isValid() and $pos->getWorldNonNull() !== $this->getWorld()){
+			if(!$this->switchWorld($pos->getWorldNonNull())){
 				return false;
 			}
 		}
@@ -1454,7 +1428,7 @@ abstract class Entity{
 			$pitch = $pitch ?? $pos->pitch;
 		}
 		$from = $this->location->asPosition();
-		$to = Position::fromObject($pos, $pos instanceof Position ? $pos->getWorld() : $this->getWorld());
+		$to = Position::fromObject($pos, $pos instanceof Position ? $pos->getWorldNonNull() : $this->getWorld());
 		$ev = new EntityTeleportEvent($this, $from, $to);
 		$ev->call();
 		if($ev->isCancelled()){
@@ -1488,7 +1462,14 @@ abstract class Entity{
 			$this->despawnFromAll();
 		}
 
-		$this->location->setWorld($targetWorld);
+		$this->location = new Location(
+			$this->location->x,
+			$this->location->y,
+			$this->location->z,
+			$this->location->yaw,
+			$this->location->pitch,
+			$targetWorld
+		);
 		$this->getWorld()->addEntity($this);
 		$this->chunk = null;
 
@@ -1506,19 +1487,23 @@ abstract class Entity{
 		return $this->hasSpawned;
 	}
 
+	abstract public static function getNetworkTypeId() : int;
+
 	/**
 	 * Called by spawnTo() to send whatever packets needed to spawn the entity to the client.
 	 */
 	protected function sendSpawnPacket(Player $player) : void{
 		$pk = new AddActorPacket();
 		$pk->entityRuntimeId = $this->getId();
-		$pk->type = AddActorPacket::LEGACY_ID_MAP_BC[static::NETWORK_ID];
+		$pk->type = LegacyEntityIdToStringIdMap::getInstance()->legacyToString(static::getNetworkTypeId());
 		$pk->position = $this->location->asVector3();
 		$pk->motion = $this->getMotion();
 		$pk->yaw = $this->location->yaw;
 		$pk->headYaw = $this->location->yaw; //TODO
 		$pk->pitch = $this->location->pitch;
-		$pk->attributes = $this->attributeMap->getAll();
+		$pk->attributes = array_map(function(Attribute $attr) : NetworkAttribute{
+			return new NetworkAttribute($attr->getId(), $attr->getMinValue(), $attr->getMaxValue(), $attr->getValue(), $attr->getDefaultValue());
+		}, $this->attributeMap->getAll());
 		$pk->metadata = $this->getSyncedNetworkData(false);
 
 		$player->getNetworkSession()->sendDataPacket($pk);
@@ -1526,7 +1511,10 @@ abstract class Entity{
 
 	public function spawnTo(Player $player) : void{
 		$id = spl_object_id($player);
-		if(!isset($this->hasSpawned[$id]) and $player->isUsingChunk($this->location->getFloorX() >> 4, $this->location->getFloorZ() >> 4)){
+		//TODO: this will cause some visible lag during chunk resends; if the player uses a spawn egg in a chunk, the
+		//created entity won't be visible until after the resend arrives. However, this is better than possibly crashing
+		//the player by sending them entities too early.
+		if(!isset($this->hasSpawned[$id]) and $player->hasReceivedChunk($this->location->getFloorX() >> 4, $this->location->getFloorZ() >> 4)){
 			$this->hasSpawned[$id] = $player;
 
 			$this->sendSpawnPacket($player);
@@ -1557,7 +1545,7 @@ abstract class Entity{
 		$id = spl_object_id($player);
 		if(isset($this->hasSpawned[$id])){
 			if($send){
-				$player->getNetworkSession()->sendDataPacket(RemoveActorPacket::create($this->id));
+				$player->getNetworkSession()->onEntityRemoved($this);
 			}
 			unset($this->hasSpawned[$id]);
 		}
@@ -1629,7 +1617,7 @@ abstract class Entity{
 	 */
 	protected function destroyCycles() : void{
 		$this->chunk = null;
-		$this->location->setWorld(null);
+		$this->location = null;
 		$this->lastDamageCause = null;
 	}
 
@@ -1643,17 +1631,18 @@ abstract class Entity{
 			$player = [$player];
 		}
 
-		$pk = SetActorDataPacket::create($this->getId(), $data ?? $this->getSyncedNetworkData(false));
+		$data = $data ?? $this->getSyncedNetworkData(false);
 
 		foreach($player as $p){
 			if($p === $this){
 				continue;
 			}
-			$p->getNetworkSession()->sendDataPacket(clone $pk);
+			$p->getNetworkSession()->syncActorData($this, $data);
 		}
 
 		if($this instanceof Player){
-			$this->getNetworkSession()->sendDataPacket($pk);
+			//TODO: bad hack, remove
+			$this->getNetworkSession()->syncActorData($this, $data);
 		}
 	}
 
@@ -1661,45 +1650,37 @@ abstract class Entity{
 	 * @return MetadataProperty[]
 	 */
 	final protected function getSyncedNetworkData(bool $dirtyOnly) : array{
-		$this->syncNetworkData();
+		$this->syncNetworkData($this->networkProperties);
 
 		return $dirtyOnly ? $this->networkProperties->getDirty() : $this->networkProperties->getAll();
 	}
 
-	protected function syncNetworkData() : void{
-		$this->networkProperties->setByte(EntityMetadataProperties::ALWAYS_SHOW_NAMETAG, $this->alwaysShowNameTag ? 1 : 0);
-		$this->networkProperties->setFloat(EntityMetadataProperties::BOUNDING_BOX_HEIGHT, $this->height);
-		$this->networkProperties->setFloat(EntityMetadataProperties::BOUNDING_BOX_WIDTH, $this->width);
-		$this->networkProperties->setFloat(EntityMetadataProperties::SCALE, $this->scale);
-		$this->networkProperties->setLong(EntityMetadataProperties::LEAD_HOLDER_EID, -1);
-		$this->networkProperties->setLong(EntityMetadataProperties::OWNER_EID, $this->ownerId ?? -1);
-		$this->networkProperties->setLong(EntityMetadataProperties::TARGET_EID, $this->targetId ?? 0);
-		$this->networkProperties->setString(EntityMetadataProperties::NAMETAG, $this->nameTag);
-		$this->networkProperties->setString(EntityMetadataProperties::SCORE_TAG, $this->scoreTag);
+	protected function syncNetworkData(EntityMetadataCollection $properties) : void{
+		$properties->setByte(EntityMetadataProperties::ALWAYS_SHOW_NAMETAG, $this->alwaysShowNameTag ? 1 : 0);
+		$properties->setFloat(EntityMetadataProperties::BOUNDING_BOX_HEIGHT, $this->height);
+		$properties->setFloat(EntityMetadataProperties::BOUNDING_BOX_WIDTH, $this->width);
+		$properties->setFloat(EntityMetadataProperties::SCALE, $this->scale);
+		$properties->setLong(EntityMetadataProperties::LEAD_HOLDER_EID, -1);
+		$properties->setLong(EntityMetadataProperties::OWNER_EID, $this->ownerId ?? -1);
+		$properties->setLong(EntityMetadataProperties::TARGET_EID, $this->targetId ?? 0);
+		$properties->setString(EntityMetadataProperties::NAMETAG, $this->nameTag);
+		$properties->setString(EntityMetadataProperties::SCORE_TAG, $this->scoreTag);
 
-		$this->networkProperties->setGenericFlag(EntityMetadataFlags::AFFECTED_BY_GRAVITY, true);
-		$this->networkProperties->setGenericFlag(EntityMetadataFlags::CAN_CLIMB, $this->canClimb);
-		$this->networkProperties->setGenericFlag(EntityMetadataFlags::CAN_SHOW_NAMETAG, $this->nameTagVisible);
-		$this->networkProperties->setGenericFlag(EntityMetadataFlags::HAS_COLLISION, true);
-		$this->networkProperties->setGenericFlag(EntityMetadataFlags::IMMOBILE, $this->immobile);
-		$this->networkProperties->setGenericFlag(EntityMetadataFlags::INVISIBLE, $this->invisible);
-		$this->networkProperties->setGenericFlag(EntityMetadataFlags::ONFIRE, $this->isOnFire());
-		$this->networkProperties->setGenericFlag(EntityMetadataFlags::SNEAKING, $this->sneaking);
-		$this->networkProperties->setGenericFlag(EntityMetadataFlags::WALLCLIMBING, $this->canClimbWalls);
+		$properties->setGenericFlag(EntityMetadataFlags::AFFECTED_BY_GRAVITY, true);
+		$properties->setGenericFlag(EntityMetadataFlags::CAN_CLIMB, $this->canClimb);
+		$properties->setGenericFlag(EntityMetadataFlags::CAN_SHOW_NAMETAG, $this->nameTagVisible);
+		$properties->setGenericFlag(EntityMetadataFlags::HAS_COLLISION, true);
+		$properties->setGenericFlag(EntityMetadataFlags::IMMOBILE, $this->immobile);
+		$properties->setGenericFlag(EntityMetadataFlags::INVISIBLE, $this->invisible);
+		$properties->setGenericFlag(EntityMetadataFlags::ONFIRE, $this->isOnFire());
+		$properties->setGenericFlag(EntityMetadataFlags::WALLCLIMBING, $this->canClimbWalls);
 	}
 
 	/**
-	 * @param Player[]|null $players
+	 * @param Player[]|null $targets
 	 */
-	public function broadcastEntityEvent(int $eventId, ?int $eventData = null, ?array $players = null) : void{
-		$this->server->broadcastPackets($players ?? $this->getViewers(), [ActorEventPacket::create($this->id, $eventId, $eventData ?? 0)]);
-	}
-
-	/**
-	 * @param Player[]|null $players
-	 */
-	public function broadcastAnimation(?array $players, int $animationId) : void{
-		$this->server->broadcastPackets($players ?? $this->getViewers(), [AnimatePacket::create($this->id, $animationId)]);
+	public function broadcastAnimation(Animation $animation, ?array $targets = null) : void{
+		$this->server->broadcastPackets($targets ?? $this->getViewers(), $animation->encode());
 	}
 
 	public function __destruct(){

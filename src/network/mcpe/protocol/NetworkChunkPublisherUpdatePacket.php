@@ -25,8 +25,7 @@ namespace pocketmine\network\mcpe\protocol;
 
 #include <rules/DataPacket.h>
 
-use pocketmine\network\mcpe\handler\PacketHandler;
-use pocketmine\network\mcpe\serializer\NetworkBinaryStream;
+use pocketmine\network\mcpe\protocol\serializer\NetworkBinaryStream;
 
 class NetworkChunkPublisherUpdatePacket extends DataPacket implements ClientboundPacket{
 	public const NETWORK_ID = ProtocolInfo::NETWORK_CHUNK_PUBLISHER_UPDATE_PACKET;
@@ -59,7 +58,7 @@ class NetworkChunkPublisherUpdatePacket extends DataPacket implements Clientboun
 		$out->putUnsignedVarInt($this->radius);
 	}
 
-	public function handle(PacketHandler $handler) : bool{
+	public function handle(PacketHandlerInterface $handler) : bool{
 		return $handler->handleNetworkChunkPublisherUpdate($this);
 	}
 }

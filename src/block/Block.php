@@ -39,7 +39,7 @@ use pocketmine\math\Facing;
 use pocketmine\math\RayTraceResult;
 use pocketmine\math\Vector3;
 use pocketmine\nbt\tag\CompoundTag;
-use pocketmine\network\mcpe\protocol\types\RuntimeBlockMapping;
+use pocketmine\network\mcpe\convert\RuntimeBlockMapping;
 use pocketmine\player\Player;
 use pocketmine\world\BlockTransaction;
 use pocketmine\world\Position;
@@ -104,14 +104,14 @@ class Block{
 	}
 
 	public function asItem() : Item{
-		return ItemFactory::get($this->idInfo->getItemId(), $this->idInfo->getVariant());
+		return ItemFactory::getInstance()->get($this->idInfo->getItemId(), $this->idInfo->getVariant());
 	}
 
 	/**
 	 * @internal
 	 */
 	public function getRuntimeId() : int{
-		return RuntimeBlockMapping::toStaticRuntimeId($this->getId(), $this->getMeta());
+		return RuntimeBlockMapping::getInstance()->toRuntimeId($this->getId(), $this->getMeta());
 	}
 
 	public function getMeta() : int{
@@ -150,10 +150,10 @@ class Block{
 	}
 
 	public function writeStateToWorld() : void{
-		$this->pos->getWorld()->getChunkAtPosition($this->pos)->setFullBlock($this->pos->x & 0xf, $this->pos->y, $this->pos->z & 0xf, $this->getFullId());
+		$this->pos->getWorldNonNull()->getChunkAtPosition($this->pos)->setFullBlock($this->pos->x & 0xf, $this->pos->y, $this->pos->z & 0xf, $this->getFullId());
 
 		$tileType = $this->idInfo->getTileClass();
-		$oldTile = $this->pos->getWorld()->getTile($this->pos);
+		$oldTile = $this->pos->getWorldNonNull()->getTile($this->pos);
 		if($oldTile !== null){
 			if($tileType === null or !($oldTile instanceof $tileType)){
 				$oldTile->close();
@@ -163,7 +163,7 @@ class Block{
 			}
 		}
 		if($oldTile === null and $tileType !== null){
-			$this->pos->getWorld()->addTile(TileFactory::create($tileType, $this->pos->getWorld(), $this->pos->asVector3()));
+			$this->pos->getWorldNonNull()->addTile(TileFactory::getInstance()->create($tileType, $this->pos->getWorldNonNull(), $this->pos->asVector3()));
 		}
 	}
 
@@ -222,10 +222,10 @@ class Block{
 	 * Do the actions needed so the block is broken with the Item
 	 */
 	public function onBreak(Item $item, ?Player $player = null) : bool{
-		if(($t = $this->pos->getWorld()->getTile($this->pos)) !== null){
+		if(($t = $this->pos->getWorldNonNull()->getTile($this->pos)) !== null){
 			$t->onBlockDestroyed();
 		}
-		$this->pos->getWorld()->setBlock($this->pos, VanillaBlocks::AIR());
+		$this->pos->getWorldNonNull()->setBlock($this->pos, VanillaBlocks::AIR());
 		return true;
 	}
 
@@ -345,10 +345,7 @@ class Block{
 	 * @internal
 	 */
 	final public function position(World $world, int $x, int $y, int $z) : void{
-		$this->pos->x = $x;
-		$this->pos->y = $y;
-		$this->pos->z = $z;
-		$this->pos->world = $world;
+		$this->pos = new Position($x, $y, $z, $world);
 	}
 
 	/**
@@ -405,11 +402,10 @@ class Block{
 	}
 
 	/**
-	 * Returns whether Silk Touch enchanted tools will cause this block to drop as itself. Since most blocks drop
-	 * themselves anyway, this is implicitly true.
+	 * Returns whether Silk Touch enchanted tools will cause this block to drop as itself.
 	 */
 	public function isAffectedBySilkTouch() : bool{
-		return true;
+		return false;
 	}
 
 	/**
@@ -418,7 +414,7 @@ class Block{
 	public function getPickedItem(bool $addUserData = false) : Item{
 		$item = $this->asItem();
 		if($addUserData){
-			$tile = $this->pos->getWorld()->getTile($this->pos);
+			$tile = $this->pos->getWorldNonNull()->getTile($this->pos);
 			if($tile instanceof Tile){
 				$nbt = $tile->getCleanedNBT();
 				if($nbt instanceof CompoundTag){
@@ -480,7 +476,7 @@ class Block{
 	 */
 	public function getSide(int $side, int $step = 1){
 		if($this->pos->isValid()){
-			return $this->pos->getWorld()->getBlock($this->pos->getSide($side, $step));
+			return $this->pos->getWorldNonNull()->getBlock($this->pos->getSide($side, $step));
 		}
 
 		throw new \InvalidStateException("Block does not have a valid world");

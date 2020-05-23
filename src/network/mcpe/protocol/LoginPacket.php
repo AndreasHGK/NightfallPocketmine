@@ -25,85 +25,25 @@ namespace pocketmine\network\mcpe\protocol;
 
 #include <rules/DataPacket.h>
 
-use Particle\Validator\Validator;
-use pocketmine\network\BadPacketException;
-use pocketmine\network\mcpe\handler\PacketHandler;
-use pocketmine\network\mcpe\serializer\NetworkBinaryStream;
-use pocketmine\utils\BinaryDataException;
+use pocketmine\network\mcpe\protocol\serializer\NetworkBinaryStream;
+use pocketmine\network\mcpe\protocol\types\login\JwtChain;
 use pocketmine\utils\BinaryStream;
-use pocketmine\utils\Utils;
-use function array_filter;
-use function count;
-use function implode;
-use function is_array;
+use function is_object;
 use function json_decode;
+use function json_encode;
 use function json_last_error_msg;
+use function strlen;
 
 class LoginPacket extends DataPacket implements ServerboundPacket{
 	public const NETWORK_ID = ProtocolInfo::LOGIN_PACKET;
 
-	public const EDITION_POCKET = 0;
-
-	public const I_USERNAME = 'displayName';
-	public const I_UUID = 'identity';
-	public const I_XUID = 'XUID';
-
-	public const I_CLIENT_RANDOM_ID = 'ClientRandomId';
-	public const I_SERVER_ADDRESS = 'ServerAddress';
-	public const I_LANGUAGE_CODE = 'LanguageCode';
-
-	public const I_SKIN_RESOURCE_PATCH = 'SkinResourcePatch';
-
-	public const I_SKIN_ID = 'SkinId';
-	public const I_SKIN_HEIGHT = 'SkinImageHeight';
-	public const I_SKIN_WIDTH = 'SkinImageWidth';
-	public const I_SKIN_DATA = 'SkinData';
-
-	public const I_CAPE_ID = 'CapeId';
-	public const I_CAPE_HEIGHT = 'CapeImageHeight';
-	public const I_CAPE_WIDTH = 'CapeImageWidth';
-	public const I_CAPE_DATA = 'CapeData';
-
-	public const I_GEOMETRY_DATA = 'SkinGeometryData';
-
-	public const I_ANIMATION_DATA = 'SkinAnimationData';
-	public const I_ANIMATION_IMAGES = 'AnimatedImageData';
-
-	public const I_ANIMATION_IMAGE_HEIGHT = 'ImageHeight';
-	public const I_ANIMATION_IMAGE_WIDTH = 'ImageWidth';
-	public const I_ANIMATION_IMAGE_FRAMES = 'Frames';
-	public const I_ANIMATION_IMAGE_TYPE = 'Type';
-	public const I_ANIMATION_IMAGE_DATA = 'Image';
-
-	public const I_PREMIUM_SKIN = 'PremiumSkin';
-	public const I_PERSONA_SKIN = 'PersonaSkin';
-	public const I_PERSONA_CAPE_ON_CLASSIC_SKIN = 'CapeOnClassicSkin';
-
 	/** @var int */
 	public $protocol;
 
-	/** @var string[] array of encoded JWT */
-	public $chainDataJwt = [];
-	/**
-	 * @var mixed[]|null extraData index of whichever JWT has it
-	 * @phpstan-var array<string, mixed>
-	 */
-	public $extraData = null;
+	/** @var JwtChain */
+	public $chainDataJwt;
 	/** @var string */
 	public $clientDataJwt;
-	/**
-	 * @var mixed[] decoded payload of the clientData JWT
-	 * @phpstan-var array<string, mixed>
-	 */
-	public $clientData = [];
-
-	/**
-	 * This field may be used by plugins to bypass keychain verification. It should only be used for plugins such as
-	 * Specter where passing verification would take too much time and not be worth it.
-	 *
-	 * @var bool
-	 */
-	public $skipVerification = false;
 
 	public function canBeSentBeforeLogin() : bool{
 		return true;
@@ -111,120 +51,51 @@ class LoginPacket extends DataPacket implements ServerboundPacket{
 
 	protected function decodePayload(NetworkBinaryStream $in) : void{
 		$this->protocol = $in->getInt();
-		$this->decodeConnectionRequest($in);
+		$this->decodeConnectionRequest($in->getString());
 	}
 
-	/**
-	 * @param mixed     $data
-	 *
-	 * @throws BadPacketException
-	 */
-	private static function validate(Validator $v, string $name, $data) : void{
-		$result = $v->validate($data);
-		if($result->isNotValid()){
-			$messages = [];
-			foreach($result->getFailures() as $f){
-				$messages[] = $f->format();
-			}
-			throw new BadPacketException("Failed to validate '$name': " . implode(", ", $messages));
+	protected function decodeConnectionRequest(string $binary) : void{
+		$connRequestReader = new BinaryStream($binary);
+
+		$chainDataJson = json_decode($connRequestReader->get($connRequestReader->getLInt()));
+		if(!is_object($chainDataJson)){
+			throw new PacketDecodeException("Failed decoding chain data JSON: " . json_last_error_msg());
 		}
-	}
-
-	/**
-	 * @throws BadPacketException
-	 * @throws BinaryDataException
-	 */
-	protected function decodeConnectionRequest(NetworkBinaryStream $in) : void{
-		$buffer = new BinaryStream($in->getString());
-
-		$chainData = json_decode($buffer->get($buffer->getLInt()), true);
-		if(!is_array($chainData)){
-			throw new BadPacketException("Failed to decode chainData JSON: " . json_last_error_msg());
-		}
-
-		$vd = new Validator();
-		$vd->required('chain')->isArray()->callback(function(array $data) : bool{
-			return count($data) <= 3 and count(array_filter($data, '\is_string')) === count($data);
-		});
-		self::validate($vd, "chainData", $chainData);
-
-		$this->chainDataJwt = $chainData['chain'];
-		foreach($this->chainDataJwt as $k => $chain){
-			//validate every chain element
-			try{
-				$claims = Utils::getJwtClaims($chain);
-			}catch(\UnexpectedValueException $e){
-				throw new BadPacketException($e->getMessage(), 0, $e);
-			}
-			if(isset($claims["extraData"])){
-				if(!is_array($claims["extraData"])){
-					throw new BadPacketException("'extraData' key should be an array");
-				}
-				if($this->extraData !== null){
-					throw new BadPacketException("Found 'extraData' more than once in chainData");
-				}
-
-				$extraV = new Validator();
-				$extraV->required(self::I_USERNAME)->string();
-				$extraV->required(self::I_UUID)->uuid();
-				$extraV->required(self::I_XUID)->string()->digits()->allowEmpty(true);
-				self::validate($extraV, "chain.$k.extraData", $claims['extraData']);
-
-				$this->extraData = $claims['extraData'];
-			}
-		}
-		if($this->extraData === null){
-			throw new BadPacketException("'extraData' not found in chain data");
-		}
-
-		$this->clientDataJwt = $buffer->get($buffer->getLInt());
+		$mapper = new \JsonMapper;
+		$mapper->bExceptionOnMissingData = true;
+		$mapper->bExceptionOnUndefinedProperty = true;
 		try{
-			$clientData = Utils::getJwtClaims($this->clientDataJwt);
-		}catch(\UnexpectedValueException $e){
-			throw new BadPacketException($e->getMessage(), 0, $e);
+			$chainData = $mapper->map($chainDataJson, new JwtChain);
+		}catch(\JsonMapper_Exception $e){
+			throw PacketDecodeException::wrap($e);
 		}
 
-		$v = new Validator();
-		$v->required(self::I_CLIENT_RANDOM_ID)->integer();
-		$v->required(self::I_SERVER_ADDRESS)->string();
-		$v->required(self::I_LANGUAGE_CODE)->string();
-
-		$v->required(self::I_SKIN_RESOURCE_PATCH)->string();
-
-		$v->required(self::I_SKIN_ID)->string();
-		$v->required(self::I_SKIN_DATA)->string();
-		$v->required(self::I_SKIN_HEIGHT)->integer(true);
-		$v->required(self::I_SKIN_WIDTH)->integer(true);
-
-		$v->required(self::I_CAPE_ID, null, true)->string();
-		$v->required(self::I_CAPE_DATA, null, true)->string();
-		$v->required(self::I_CAPE_HEIGHT)->integer(true);
-		$v->required(self::I_CAPE_WIDTH)->integer(true);
-
-		$v->required(self::I_GEOMETRY_DATA, null, true)->string();
-
-		$v->required(self::I_ANIMATION_DATA, null, true)->string();
-		$v->required(self::I_ANIMATION_IMAGES, null, true)->isArray()->each(function(Validator $vSub) : void{
-			$vSub->required(self::I_ANIMATION_IMAGE_HEIGHT)->integer(true);
-			$vSub->required(self::I_ANIMATION_IMAGE_WIDTH)->integer(true);
-			$vSub->required(self::I_ANIMATION_IMAGE_FRAMES)->numeric(); //float() doesn't accept ints ???
-			$vSub->required(self::I_ANIMATION_IMAGE_TYPE)->integer(true);
-			$vSub->required(self::I_ANIMATION_IMAGE_DATA)->string();
-		});
-		$v->required(self::I_PREMIUM_SKIN)->bool();
-		$v->required(self::I_PERSONA_SKIN)->bool();
-		$v->required(self::I_PERSONA_CAPE_ON_CLASSIC_SKIN)->bool();
-
-		self::validate($v, 'clientData', $clientData);
-
-		$this->clientData = $clientData;
+		$this->chainDataJwt = $chainData;
+		$this->clientDataJwt = $connRequestReader->get($connRequestReader->getLInt());
 	}
 
 	protected function encodePayload(NetworkBinaryStream $out) : void{
-		//TODO
+		$out->putInt($this->protocol);
+		$out->putString($this->encodeConnectionRequest());
 	}
 
-	public function handle(PacketHandler $handler) : bool{
+	protected function encodeConnectionRequest() : string{
+		$connRequestWriter = new BinaryStream();
+
+		$chainDataJson = json_encode($this->chainDataJwt);
+		if($chainDataJson === false){
+			throw new \InvalidStateException("Failed to encode chain data JSON: " . json_last_error_msg());
+		}
+		$connRequestWriter->putLInt(strlen($chainDataJson));
+		$connRequestWriter->put($chainDataJson);
+
+		$connRequestWriter->putLInt(strlen($this->clientDataJwt));
+		$connRequestWriter->put($this->clientDataJwt);
+
+		return $connRequestWriter->getBuffer();
+	}
+
+	public function handle(PacketHandlerInterface $handler) : bool{
 		return $handler->handleLogin($this);
 	}
 }

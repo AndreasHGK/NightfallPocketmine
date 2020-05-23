@@ -23,6 +23,7 @@ declare(strict_types=1);
 
 namespace pocketmine\plugin;
 
+use pocketmine\utils\AssumptionFailedError;
 use function file_exists;
 use function fopen;
 use function is_dir;
@@ -52,9 +53,11 @@ class DiskResourceProvider implements ResourceProvider{
 	 * @return null|resource Resource data, or null
 	 */
 	public function getResource(string $filename){
-		$filename = rtrim(str_replace("\\", "/", $filename), "/");
-		if(file_exists($this->file . "/" . $filename)){
-			return fopen($this->file . "/" . $filename, "rb");
+		$filename = rtrim(str_replace(DIRECTORY_SEPARATOR, "/", $filename), "/");
+		if(file_exists($this->file . $filename)){
+			$resource = fopen($this->file . $filename, "rb");
+			if($resource === false) throw new AssumptionFailedError("fopen() should not fail on a file which exists");
+			return $resource;
 		}
 
 		return null;

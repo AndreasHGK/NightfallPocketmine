@@ -24,15 +24,15 @@ declare(strict_types=1);
 namespace pocketmine\entity\projectile;
 
 use pocketmine\block\Block;
+use pocketmine\entity\animation\ArrowShakeAnimation;
 use pocketmine\entity\Entity;
 use pocketmine\event\entity\ProjectileHitEvent;
 use pocketmine\event\inventory\InventoryPickupArrowEvent;
 use pocketmine\item\VanillaItems;
 use pocketmine\math\RayTraceResult;
 use pocketmine\nbt\tag\CompoundTag;
-use pocketmine\network\mcpe\protocol\ActorEventPacket;
-use pocketmine\network\mcpe\protocol\TakeItemActorPacket;
 use pocketmine\network\mcpe\protocol\types\entity\EntityLegacyIds;
+use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataCollection;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataFlags;
 use pocketmine\player\Player;
 use pocketmine\world\sound\ArrowHitSound;
@@ -41,7 +41,8 @@ use function mt_rand;
 use function sqrt;
 
 class Arrow extends Projectile{
-	public const NETWORK_ID = EntityLegacyIds::ARROW;
+
+	public static function getNetworkTypeId() : int{ return EntityLegacyIds::ARROW;	}
 
 	public const PICKUP_NONE = 0;
 	public const PICKUP_ANY = 1;
@@ -141,7 +142,7 @@ class Arrow extends Projectile{
 
 	protected function onHitBlock(Block $blockHit, RayTraceResult $hitResult) : void{
 		parent::onHitBlock($blockHit, $hitResult);
-		$this->broadcastEntityEvent(ActorEventPacket::ARROW_SHAKE, 7); //7 ticks
+		$this->broadcastAnimation(new ArrowShakeAnimation($this, 7));
 	}
 
 	protected function onHitEntity(Entity $entityHit, RayTraceResult $hitResult) : void{
@@ -185,15 +186,17 @@ class Arrow extends Projectile{
 			return;
 		}
 
-		$this->server->broadcastPackets($this->getViewers(), [TakeItemActorPacket::create($player->getId(), $this->getId())]);
+		foreach($this->getViewers() as $viewer){
+			$viewer->getNetworkSession()->onPlayerPickUpItem($player, $this);
+		}
 
 		$playerInventory->addItem(clone $item);
 		$this->flagForDespawn();
 	}
 
-	protected function syncNetworkData() : void{
-		parent::syncNetworkData();
+	protected function syncNetworkData(EntityMetadataCollection $properties) : void{
+		parent::syncNetworkData($properties);
 
-		$this->networkProperties->setGenericFlag(EntityMetadataFlags::CRITICAL, $this->critical);
+		$properties->setGenericFlag(EntityMetadataFlags::CRITICAL, $this->critical);
 	}
 }

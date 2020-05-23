@@ -25,9 +25,8 @@ namespace pocketmine\network\mcpe\protocol;
 
 #include <rules/DataPacket.h>
 
-use pocketmine\network\mcpe\handler\PacketHandler;
+use pocketmine\network\mcpe\protocol\serializer\NetworkBinaryStream;
 use pocketmine\network\mcpe\protocol\types\PlayerListEntry;
-use pocketmine\network\mcpe\serializer\NetworkBinaryStream;
 use function count;
 
 class PlayerListPacket extends DataPacket implements ClientboundPacket{
@@ -83,6 +82,11 @@ class PlayerListPacket extends DataPacket implements ClientboundPacket{
 
 			$this->entries[$i] = $entry;
 		}
+		if($this->type === self::TYPE_ADD){
+			for($i = 0; $i < $count; ++$i){
+				$this->entries[$i]->skinData->setVerified($in->getBool());
+			}
+		}
 	}
 
 	protected function encodePayload(NetworkBinaryStream $out) : void{
@@ -103,9 +107,14 @@ class PlayerListPacket extends DataPacket implements ClientboundPacket{
 				$out->putUUID($entry->uuid);
 			}
 		}
+		if($this->type === self::TYPE_ADD){
+			foreach($this->entries as $entry){
+				$out->putBool($entry->skinData->isVerified());
+			}
+		}
 	}
 
-	public function handle(PacketHandler $handler) : bool{
+	public function handle(PacketHandlerInterface $handler) : bool{
 		return $handler->handlePlayerList($this);
 	}
 }

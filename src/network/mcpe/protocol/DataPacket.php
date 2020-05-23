@@ -25,15 +25,9 @@ namespace pocketmine\network\mcpe\protocol;
 
 #include <rules/DataPacket.h>
 
-use pocketmine\network\BadPacketException;
-use pocketmine\network\mcpe\serializer\NetworkBinaryStream;
+use pocketmine\network\mcpe\protocol\serializer\NetworkBinaryStream;
 use pocketmine\utils\BinaryDataException;
-use pocketmine\utils\Utils;
-use function bin2hex;
 use function get_class;
-use function is_object;
-use function is_string;
-use function method_exists;
 
 abstract class DataPacket implements Packet{
 
@@ -74,15 +68,15 @@ abstract class DataPacket implements Packet{
 	}
 
 	/**
-	 * @throws BadPacketException
+	 * @throws PacketDecodeException
 	 */
 	final public function decode() : void{
 		$this->buf->rewind();
 		try{
 			$this->decodeHeader($this->buf);
 			$this->decodePayload($this->buf);
-		}catch(BinaryDataException | BadPacketException $e){
-			throw new BadPacketException($this->getName() . ": " . $e->getMessage(), 0, $e);
+		}catch(BinaryDataException | PacketDecodeException $e){
+			throw PacketDecodeException::wrap($e, $this->getName());
 		}
 	}
 
@@ -105,7 +99,7 @@ abstract class DataPacket implements Packet{
 	/**
 	 * Decodes the packet body, without the packet ID or other generic header fields.
 	 *
-	 * @throws BadPacketException
+	 * @throws PacketDecodeException
 	 * @throws BinaryDataException
 	 */
 	abstract protected function decodePayload(NetworkBinaryStream $in) : void;

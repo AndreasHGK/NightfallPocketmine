@@ -49,13 +49,11 @@ use pocketmine\event\world\WorldSaveEvent;
 use pocketmine\item\Item;
 use pocketmine\item\ItemFactory;
 use pocketmine\item\ItemUseResult;
+use pocketmine\item\LegacyStringToItemParser;
 use pocketmine\math\AxisAlignedBB;
 use pocketmine\math\Vector3;
 use pocketmine\network\mcpe\protocol\BlockActorDataPacket;
 use pocketmine\network\mcpe\protocol\ClientboundPacket;
-use pocketmine\network\mcpe\protocol\LevelEventPacket;
-use pocketmine\network\mcpe\protocol\SetDifficultyPacket;
-use pocketmine\network\mcpe\protocol\SetTimePacket;
 use pocketmine\network\mcpe\protocol\UpdateBlockPacket;
 use pocketmine\player\Player;
 use pocketmine\Server;
@@ -116,9 +114,11 @@ class World implements ChunkManager{
 
 	public const HALF_Y_MAX = self::Y_MAX / 2;
 
-	public const TIME_DAY = 0;
+	public const TIME_DAY = 1000;
+	public const TIME_NOON = 6000;
 	public const TIME_SUNSET = 12000;
-	public const TIME_NIGHT = 14000;
+	public const TIME_NIGHT = 13000;
+	public const TIME_MIDNIGHT = 18000;
 	public const TIME_SUNRISE = 23000;
 
 	public const TIME_FULL = 24000;
@@ -127,6 +127,8 @@ class World implements ChunkManager{
 	public const DIFFICULTY_EASY = 1;
 	public const DIFFICULTY_NORMAL = 2;
 	public const DIFFICULTY_HARD = 3;
+
+	public const DEFAULT_TICKED_BLOCKS_PER_SUBCHUNK_PER_TICK = 3;
 
 	/** @var Player[] */
 	private $players = [];
@@ -170,8 +172,6 @@ class World implements ChunkManager{
 
 	/** @var ClientboundPacket[][] */
 	private $chunkPackets = [];
-	/** @var ClientboundPacket[] */
-	private $globalPackets = [];
 
 	/** @var float[] */
 	private $unloadQueue = [];
@@ -231,6 +231,8 @@ class World implements ChunkManager{
 	private $chunkTickRadius;
 	/** @var int */
 	private $chunksPerTick;
+	/** @var int */
+	private $tickedBlocksPerSubchunkPerTick = self::DEFAULT_TICKED_BLOCKS_PER_SUBCHUNK_PER_TICK;
 	/** @var bool[] */
 	private $randomTickBlocks = [];
 
@@ -248,6 +250,11 @@ class World implements ChunkManager{
 
 	/** @var bool */
 	private $closed = false;
+	/**
+	 * @var \Closure[]
+	 * @phpstan-var array<int, \Closure() : void>
+	 */
+	private $unloadCallbacks = [];
 
 	/** @var BlockLightUpdate|null */
 	private $blockLightUpdate = null;
@@ -328,7 +335,7 @@ class World implements ChunkManager{
 		$this->worldHeight = $this->provider->getWorldHeight();
 
 		$this->server->getLogger()->info($this->server->getLanguage()->translateString("pocketmine.level.preparing", [$this->displayName]));
-		$this->generator = GeneratorManager::getGenerator($this->provider->getWorldData()->getGenerator(), true);
+		$this->generator = GeneratorManager::getInstance()->getGenerator($this->provider->getWorldData()->getGenerator(), true);
 		//TODO: validate generator options
 
 		$this->folderName = $name;
@@ -342,11 +349,12 @@ class World implements ChunkManager{
 
 		$this->chunkTickRadius = min($this->server->getViewDistance(), max(1, (int) $this->server->getProperty("chunk-ticking.tick-radius", 4)));
 		$this->chunksPerTick = (int) $this->server->getProperty("chunk-ticking.per-tick", 40);
+		$this->tickedBlocksPerSubchunkPerTick = (int) $this->server->getProperty("chunk-ticking.blocks-per-subchunk-per-tick", self::DEFAULT_TICKED_BLOCKS_PER_SUBCHUNK_PER_TICK);
 		$this->chunkPopulationQueueSize = (int) $this->server->getProperty("chunk-generation.population-queue-size", 2);
 
 		$dontTickBlocks = array_fill_keys($this->server->getProperty("chunk-ticking.disable-block-ticking", []), true);
 
-		foreach(BlockFactory::getAllKnownStates() as $state){
+		foreach(BlockFactory::getInstance()->getAllKnownStates() as $state){
 			if(!isset($dontTickBlocks[$state->getId()]) and $state->ticksRandomly()){
 				$this->randomTickBlocks[$state->getFullId()] = true;
 			}
@@ -407,6 +415,11 @@ class World implements ChunkManager{
 			throw new \InvalidStateException("Tried to close a world which is already closed");
 		}
 
+		foreach($this->unloadCallbacks as $callback){
+			$callback();
+		}
+		$this->unloadCallbacks = [];
+
 		foreach($this->chunks as $chunk){
 			$this->unloadChunk($chunk->getX(), $chunk->getZ(), false);
 		}
@@ -421,6 +434,14 @@ class World implements ChunkManager{
 		$this->temporalPosition = null;
 
 		$this->closed = true;
+	}
+
+	public function addOnUnloadCallback(\Closure $callback) : void{
+		$this->unloadCallbacks[spl_object_id($callback)] = $callback;
+	}
+
+	public function removeOnUnloadCallback(\Closure $callback) : void{
+		unset($this->unloadCallbacks[spl_object_id($callback)]);
 	}
 
 	/**
@@ -458,20 +479,6 @@ class World implements ChunkManager{
 			}else{
 				$this->server->broadcastPackets($players, $pk);
 			}
-		}
-	}
-
-	/**
-	 * Broadcasts a LevelEvent to players in the area. This could be sound, particles, weather changes, etc.
-	 *
-	 * @param Vector3|null $pos If null, broadcasts to every player in the World
-	 */
-	public function broadcastLevelEvent(?Vector3 $pos, int $evid, int $data = 0) : void{
-		$pk = LevelEventPacket::create($evid, $data, $pos);
-		if($pos !== null){
-			$this->broadcastPacketToViewers($pos, $pk);
-		}else{
-			$this->broadcastGlobalPacket($pk);
 		}
 	}
 
@@ -514,29 +521,14 @@ class World implements ChunkManager{
 	}
 
 	/**
-	 * Queues a packet to be sent to all players using the chunk at the specified X/Z coordinates at the end of the
-	 * current tick.
+	 * Broadcasts a packet to every player who has the target position within their view distance.
 	 */
-	public function addChunkPacket(int $chunkX, int $chunkZ, ClientboundPacket $packet) : void{
-		if(!isset($this->chunkPackets[$index = World::chunkHash($chunkX, $chunkZ)])){
+	public function broadcastPacketToViewers(Vector3 $pos, ClientboundPacket $packet) : void{
+		if(!isset($this->chunkPackets[$index = World::chunkHash($pos->getFloorX() >> 4, $pos->getFloorZ() >> 4)])){
 			$this->chunkPackets[$index] = [$packet];
 		}else{
 			$this->chunkPackets[$index][] = $packet;
 		}
-	}
-
-	/**
-	 * Broadcasts a packet to every player who has the target position within their view distance.
-	 */
-	public function broadcastPacketToViewers(Vector3 $pos, ClientboundPacket $packet) : void{
-		$this->addChunkPacket($pos->getFloorX() >> 4, $pos->getFloorZ() >> 4, $packet);
-	}
-
-	/**
-	 * Broadcasts a packet to every player in the world.
-	 */
-	public function broadcastGlobalPacket(ClientboundPacket $packet) : void{
-		$this->globalPackets[] = $packet;
 	}
 
 	public function registerChunkLoader(ChunkLoader $loader, int $chunkX, int $chunkZ, bool $autoLoad = true) : void{
@@ -644,12 +636,11 @@ class World implements ChunkManager{
 	 * @param Player ...$targets If empty, will send to all players in the world.
 	 */
 	public function sendTime(Player ...$targets) : void{
-		$pk = SetTimePacket::create($this->time);
-
 		if(count($targets) === 0){
-			$this->broadcastGlobalPacket($pk);
-		}else{
-			$this->server->broadcastPackets($targets, [$pk]);
+			$targets = $this->players;
+		}
+		foreach($targets as $player){
+			$player->getNetworkSession()->syncWorldTime($this->time);
 		}
 	}
 
@@ -783,13 +774,6 @@ class World implements ChunkManager{
 
 		if($this->sleepTicks > 0 and --$this->sleepTicks <= 0){
 			$this->checkSleep();
-		}
-
-		if(count($this->globalPackets) > 0){
-			if(count($this->players) > 0){
-				$this->server->broadcastPackets($this->players, $this->globalPackets);
-			}
-			$this->globalPackets = [];
 		}
 
 		foreach($this->chunkPackets as $index => $entries){
@@ -934,8 +918,12 @@ class World implements ChunkManager{
 
 			foreach($chunk->getSubChunks() as $Y => $subChunk){
 				if(!$subChunk->isEmptyFast()){
-					$k = mt_rand(0, 0xfffffffff); //36 bits
-					for($i = 0; $i < 3; ++$i){
+					$k = 0;
+					for($i = 0; $i < $this->tickedBlocksPerSubchunkPerTick; ++$i){
+						if(($i % 5) === 0){
+							//60 bits will be used by 5 blocks (12 bits each)
+							$k = mt_rand(0, (1 << 60) - 1);
+						}
 						$x = $k & 0x0f;
 						$y = ($k >> 4) & 0x0f;
 						$z = ($k >> 8) & 0x0f;
@@ -945,7 +933,7 @@ class World implements ChunkManager{
 
 						if(isset($this->randomTickBlocks[$state])){
 							/** @var Block $block */
-							$block = BlockFactory::fromFullBlock($state);
+							$block = BlockFactory::getInstance()->fromFullBlock($state);
 							$block->position($this, $chunkX * 16 + $x, ($Y << 4) + $y, $chunkZ * 16 + $z);
 							$block->onRandomTick();
 						}
@@ -1303,7 +1291,7 @@ class World implements ChunkManager{
 			}
 		}
 
-		$block = BlockFactory::fromFullBlock($fullState);
+		$block = BlockFactory::getInstance()->fromFullBlock($fullState);
 		$block->position($this, $x, $y, $z);
 
 		static $dynamicStateRead = false;
@@ -1397,7 +1385,7 @@ class World implements ChunkManager{
 		$nbt->setTag("Item", $item->nbtSerialize());
 
 		/** @var ItemEntity $itemEntity */
-		$itemEntity = EntityFactory::create(ItemEntity::class, $this, $nbt);
+		$itemEntity = EntityFactory::getInstance()->create(ItemEntity::class, $this, $nbt);
 		$itemEntity->spawnToAll();
 		return $itemEntity;
 
@@ -1422,7 +1410,7 @@ class World implements ChunkManager{
 			$nbt->setShort(ExperienceOrb::TAG_VALUE_PC, $split);
 
 			/** @var ExperienceOrb $orb */
-			$orb = EntityFactory::create(ExperienceOrb::class, $this, $nbt);
+			$orb = EntityFactory::getInstance()->create(ExperienceOrb::class, $this, $nbt);
 			$orb->spawnToAll();
 			$orbs[] = $orb;
 		}
@@ -1464,8 +1452,9 @@ class World implements ChunkManager{
 
 			if($player->isAdventure(true) and !$ev->isCancelled()){
 				$canBreak = false;
+				$itemParser = LegacyStringToItemParser::getInstance();
 				foreach($item->getCanDestroy() as $v){
-					$entry = ItemFactory::fromString($v);
+					$entry = $itemParser->parse($v);
 					if($entry->getBlock()->isSameType($target)){
 						$canBreak = true;
 						break;
@@ -1549,15 +1538,13 @@ class World implements ChunkManager{
 			$ev = new PlayerInteractEvent($player, $item, $blockClicked, $clickVector, $face, PlayerInteractEvent::RIGHT_CLICK_BLOCK);
 			$ev->call();
 			if(!$ev->isCancelled()){
-				if(!$player->isSneaking() and $blockClicked->onInteract($item, $face, $clickVector, $player)){
+				if((!$player->isSneaking() or $item->isNull()) and $blockClicked->onInteract($item, $face, $clickVector, $player)){
 					return true;
 				}
 
-				if(!$player->isSneaking()){
-					$result = $item->onActivate($player, $blockReplace, $blockClicked, $face, $clickVector);
-					if(!$result->equals(ItemUseResult::NONE())){
-						return $result->equals(ItemUseResult::SUCCESS());
-					}
+				$result = $item->onActivate($player, $blockReplace, $blockClicked, $face, $clickVector);
+				if(!$result->equals(ItemUseResult::NONE())){
+					return $result->equals(ItemUseResult::SUCCESS());
 				}
 			}else{
 				return false;
@@ -1586,7 +1573,7 @@ class World implements ChunkManager{
 			}
 
 			if($player !== null){
-				if(($diff = $player->getNextPosition()->subtract($player->getPosition())) and $diff->lengthSquared() > 0.00001){
+				if(($diff = $player->getNextPosition()->subtractVector($player->getPosition())) and $diff->lengthSquared() > 0.00001){
 					$bb = $player->getBoundingBox()->offsetCopy($diff->x, $diff->y, $diff->z);
 					if($collisionBox->intersectsWith($bb)){
 						return false; //Inside player BB
@@ -1599,8 +1586,9 @@ class World implements ChunkManager{
 			$ev = new BlockPlaceEvent($player, $hand, $blockReplace, $blockClicked, $item);
 			if($player->isAdventure(true) and !$ev->isCancelled()){
 				$canPlace = false;
+				$itemParser = LegacyStringToItemParser::getInstance();
 				foreach($item->getCanPlaceOn() as $v){
-					$entry = ItemFactory::fromString($v);
+					$entry = $itemParser->parse($v);
 					if($entry->getBlock()->isSameType($blockClicked)){
 						$canPlace = true;
 						break;
@@ -2362,18 +2350,8 @@ class World implements ChunkManager{
 		}
 		$this->provider->getWorldData()->setDifficulty($difficulty);
 
-		$this->sendDifficulty();
-	}
-
-	/**
-	 * @param Player ...$targets
-	 */
-	public function sendDifficulty(Player ...$targets) : void{
-		$pk = SetDifficultyPacket::create($this->getDifficulty());
-		if(count($targets) === 0){
-			$this->broadcastGlobalPacket($pk);
-		}else{
-			$this->server->broadcastPackets($targets, [$pk]);
+		foreach($this->players as $player){
+			$player->getNetworkSession()->syncWorldDifficulty($this->getDifficulty());
 		}
 	}
 

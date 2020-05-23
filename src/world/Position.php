@@ -24,6 +24,7 @@ declare(strict_types=1);
 namespace pocketmine\world;
 
 use pocketmine\math\Vector3;
+use pocketmine\utils\AssumptionFailedError;
 use function assert;
 
 class Position extends Vector3{
@@ -38,7 +39,11 @@ class Position extends Vector3{
 	 */
 	public function __construct($x = 0, $y = 0, $z = 0, ?World $world = null){
 		parent::__construct($x, $y, $z);
-		$this->setWorld($world);
+		if($world !== null and $world->isClosed()){
+			throw new \InvalidArgumentException("Specified world has been unloaded and cannot be used");
+		}
+
+		$this->world = $world;
 	}
 
 	/**
@@ -71,19 +76,17 @@ class Position extends Vector3{
 	}
 
 	/**
-	 * Sets the target world of the position.
+	 * Returns the position's world if valid. Throws an error if the world is unexpectedly null.
 	 *
-	 * @return $this
-	 *
-	 * @throws \InvalidArgumentException if the specified World has been closed
+	 * @throws AssumptionFailedError
 	 */
-	public function setWorld(?World $world){
-		if($world !== null and $world->isClosed()){
-			throw new \InvalidArgumentException("Specified world has been unloaded and cannot be used");
+	public function getWorldNonNull() : World{
+		$world = $this->getWorld();
+		if($world === null){
+			throw new AssumptionFailedError("Position world is null");
 		}
 
-		$this->world = $world;
-		return $this;
+		return $world;
 	}
 
 	/**
@@ -111,7 +114,7 @@ class Position extends Vector3{
 	}
 
 	public function __toString(){
-		return "Position(world=" . ($this->isValid() ? $this->getWorld()->getDisplayName() : "null") . ",x=" . $this->x . ",y=" . $this->y . ",z=" . $this->z . ")";
+		return "Position(level=" . ($this->isValid() ? $this->getWorldNonNull()->getDisplayName() : "null") . ",x=" . $this->x . ",y=" . $this->y . ",z=" . $this->z . ")";
 	}
 
 	public function equals(Vector3 $v) : bool{

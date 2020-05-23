@@ -25,8 +25,7 @@ namespace pocketmine\network\mcpe\protocol;
 
 #include <rules/DataPacket.h>
 
-use pocketmine\network\mcpe\handler\PacketHandler;
-use pocketmine\network\mcpe\serializer\NetworkBinaryStream;
+use pocketmine\network\mcpe\protocol\serializer\NetworkBinaryStream;
 
 class PlayerActionPacket extends DataPacket implements ServerboundPacket{
 	public const NETWORK_ID = ProtocolInfo::PLAYER_ACTION_PACKET;
@@ -50,7 +49,7 @@ class PlayerActionPacket extends DataPacket implements ServerboundPacket{
 	public const ACTION_STOP_GLIDE = 16;
 	public const ACTION_BUILD_DENIED = 17;
 	public const ACTION_CONTINUE_BREAK = 18;
-
+	public const ACTION_CHANGE_SKIN = 19;
 	public const ACTION_SET_ENCHANTMENT_SEED = 20;
 	public const ACTION_START_SWIMMING = 21;
 	public const ACTION_STOP_SWIMMING = 22;
@@ -85,7 +84,7 @@ class PlayerActionPacket extends DataPacket implements ServerboundPacket{
 		$out->putVarInt($this->face);
 	}
 
-	public function handle(PacketHandler $handler) : bool{
+	public function handle(PacketHandlerInterface $handler) : bool{
 		return $handler->handlePlayerAction($this);
 	}
 }

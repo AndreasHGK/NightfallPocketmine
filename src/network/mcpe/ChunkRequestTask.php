@@ -24,8 +24,10 @@ declare(strict_types=1);
 namespace pocketmine\network\mcpe;
 
 use pocketmine\network\mcpe\compression\CompressBatchPromise;
-use pocketmine\network\mcpe\compression\Zlib;
+use pocketmine\network\mcpe\compression\Compressor;
+use pocketmine\network\mcpe\convert\RuntimeBlockMapping;
 use pocketmine\network\mcpe\protocol\LevelChunkPacket;
+use pocketmine\network\mcpe\protocol\serializer\PacketBatch;
 use pocketmine\network\mcpe\serializer\ChunkSerializer;
 use pocketmine\scheduler\AsyncTask;
 use pocketmine\world\format\Chunk;
@@ -42,8 +44,8 @@ class ChunkRequestTask extends AsyncTask{
 	/** @var int */
 	protected $chunkZ;
 
-	/** @var int */
-	protected $compressionLevel;
+	/** @var Compressor */
+	protected $compressor;
 
 	/** @var string */
 	private $tiles = "";
@@ -51,8 +53,8 @@ class ChunkRequestTask extends AsyncTask{
 	/**
 	 * @phpstan-param (\Closure() : void)|null $onError
 	 */
-	public function __construct(int $chunkX, int $chunkZ, Chunk $chunk, CompressBatchPromise $promise, ?\Closure $onError = null){
-		$this->compressionLevel = Zlib::$LEVEL;
+	public function __construct(int $chunkX, int $chunkZ, Chunk $chunk, CompressBatchPromise $promise, Compressor $compressor, ?\Closure $onError = null){
+		$this->compressor = $compressor;
 
 		$this->chunk = FastChunkSerializer::serializeWithoutLight($chunk);
 		$this->chunkX = $chunkX;
@@ -66,8 +68,8 @@ class ChunkRequestTask extends AsyncTask{
 	public function onRun() : void{
 		$chunk = FastChunkSerializer::deserialize($this->chunk);
 		$subCount = ChunkSerializer::getSubChunkCount($chunk);
-		$payload = ChunkSerializer::serialize($chunk, $this->tiles);
-		$this->setResult(Zlib::compress(PacketBatch::fromPackets(LevelChunkPacket::withoutCache($this->chunkX, $this->chunkZ, $subCount, $payload))->getBuffer(), $this->compressionLevel));
+		$payload = ChunkSerializer::serialize($chunk, RuntimeBlockMapping::getInstance(), $this->tiles);
+		$this->setResult($this->compressor->compress(PacketBatch::fromPackets(LevelChunkPacket::withoutCache($this->chunkX, $this->chunkZ, $subCount, $payload))->getBuffer()));
 	}
 
 	public function onError() : void{

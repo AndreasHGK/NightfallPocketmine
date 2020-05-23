@@ -60,7 +60,7 @@ abstract class ProjectileItem extends Item{
 		Utils::testValidInstance($class, Throwable::class);
 
 		/** @var Throwable $projectile */
-		$projectile = EntityFactory::create($class, $location->getWorld(), $nbt, $player);
+		$projectile = EntityFactory::getInstance()->create($class, $location->getWorldNonNull(), $nbt, $player);
 		$projectile->setMotion($projectile->getMotion()->multiply($this->getThrowForce()));
 
 		$projectileEv = new ProjectileLaunchEvent($projectile);
@@ -72,7 +72,7 @@ abstract class ProjectileItem extends Item{
 
 		$projectile->spawnToAll();
 
-		$location->getWorld()->addSound($location, new ThrowSound());
+		$location->getWorldNonNull()->addSound($location, new ThrowSound());
 
 		$this->pop();
 

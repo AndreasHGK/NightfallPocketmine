@@ -78,7 +78,7 @@ class Leaves extends Transparent{
 		}
 		$visited[$index] = true;
 
-		$block = $this->pos->getWorld()->getBlock($pos);
+		$block = $this->pos->getWorldNonNull()->getBlock($pos);
 		if($block instanceof Wood){ //type doesn't matter
 			return true;
 		}
@@ -97,7 +97,7 @@ class Leaves extends Transparent{
 	public function onNearbyBlockChange() : void{
 		if(!$this->noDecay and !$this->checkDecay){
 			$this->checkDecay = true;
-			$this->pos->getWorld()->setBlock($this->pos, $this, false);
+			$this->pos->getWorldNonNull()->setBlock($this->pos, $this, false);
 		}
 	}
 
@@ -111,9 +111,9 @@ class Leaves extends Transparent{
 			$ev->call();
 			if($ev->isCancelled() or $this->findLog($this->pos)){
 				$this->checkDecay = false;
-				$this->pos->getWorld()->setBlock($this->pos, $this, false);
+				$this->pos->getWorldNonNull()->setBlock($this->pos, $this, false);
 			}else{
-				$this->pos->getWorld()->useBreakOn($this->pos);
+				$this->pos->getWorldNonNull()->useBreakOn($this->pos);
 			}
 		}
 	}
@@ -130,7 +130,7 @@ class Leaves extends Transparent{
 
 		$drops = [];
 		if(mt_rand(1, 20) === 1){ //Saplings
-			$drops[] = ItemFactory::get(ItemIds::SAPLING, $this->treeType->getMagicNumber());
+			$drops[] = ItemFactory::getInstance()->get(ItemIds::SAPLING, $this->treeType->getMagicNumber());
 		}
 		if(($this->treeType->equals(TreeType::OAK()) or $this->treeType->equals(TreeType::DARK_OAK())) and mt_rand(1, 200) === 1){ //Apples
 			$drops[] = VanillaItems::APPLE();

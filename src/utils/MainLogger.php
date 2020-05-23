@@ -24,6 +24,7 @@ declare(strict_types=1);
 namespace pocketmine\utils;
 
 use LogLevel;
+use pocketmine\errorhandler\ErrorTypeToStringMap;
 use pocketmine\thread\Thread;
 use pocketmine\thread\Worker;
 use function fclose;
@@ -38,7 +39,7 @@ use function trim;
 use const PHP_EOL;
 use const PTHREADS_INHERIT_NONE;
 
-class MainLogger extends \AttachableThreadedLogger{
+class MainLogger extends \AttachableThreadedLogger implements \BufferedLogger{
 
 	/** @var string */
 	protected $logFile;
@@ -149,7 +150,7 @@ class MainLogger extends \AttachableThreadedLogger{
 			$trace = $e->getTrace();
 		}
 
-		$this->synchronized(function() use ($e, $trace) : void{
+		$this->buffer(function() use ($e, $trace) : void{
 			$this->critical(self::printExceptionMessage($e));
 			foreach(Utils::printableTrace($trace) as $line){
 				$this->debug($line, true);
@@ -170,8 +171,8 @@ class MainLogger extends \AttachableThreadedLogger{
 
 		$errno = $e->getCode();
 		try{
-			$errno = \ErrorUtils::errorTypeToString($errno);
-		}catch(\InvalidArgumentException $e){
+			$errno = ErrorTypeToStringMap::get($errno);
+		}catch(\InvalidArgumentException $ex){
 			//pass
 		}
 
@@ -208,6 +209,13 @@ class MainLogger extends \AttachableThreadedLogger{
 				$this->debug($message);
 				break;
 		}
+	}
+
+	/**
+	 * @phpstan-param \Closure() : void $c
+	 */
+	public function buffer(\Closure $c) : void{
+		$this->synchronized($c);
 	}
 
 	public function shutdown() : void{

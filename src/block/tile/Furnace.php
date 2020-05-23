@@ -24,11 +24,11 @@ declare(strict_types=1);
 namespace pocketmine\block\tile;
 
 use pocketmine\block\Furnace as BlockFurnace;
+use pocketmine\block\inventory\FurnaceInventory;
 use pocketmine\crafting\FurnaceRecipe;
 use pocketmine\event\inventory\FurnaceBurnEvent;
 use pocketmine\event\inventory\FurnaceSmeltEvent;
-use pocketmine\inventory\CallbackInventoryChangeListener;
-use pocketmine\inventory\FurnaceInventory;
+use pocketmine\inventory\CallbackInventoryListener;
 use pocketmine\inventory\Inventory;
 use pocketmine\item\Item;
 use pocketmine\item\ItemFactory;
@@ -58,9 +58,9 @@ class Furnace extends Spawnable implements Container, Nameable{
 	public function __construct(World $world, Vector3 $pos){
 		parent::__construct($world, $pos);
 		$this->inventory = new FurnaceInventory($this->pos);
-		$this->inventory->addChangeListeners(CallbackInventoryChangeListener::onAnyChange(
+		$this->inventory->getListeners()->add(CallbackInventoryListener::onAnyChange(
 			function(Inventory $unused) : void{
-				$this->pos->getWorld()->scheduleDelayedBlockUpdate($this->pos, 1);
+				$this->pos->getWorldNonNull()->scheduleDelayedBlockUpdate($this->pos, 1);
 			})
 		);
 	}
@@ -129,7 +129,7 @@ class Furnace extends Spawnable implements Container, Nameable{
 		$block = $this->getBlock();
 		if($block instanceof BlockFurnace and !$block->isLit()){
 			$block->setLit(true);
-			$this->pos->getWorld()->setBlock($block->getPos(), $block);
+			$this->pos->getWorldNonNull()->setBlock($block->getPos(), $block);
 		}
 
 		if($this->remainingFuelTime > 0 and $ev->isBurning()){
@@ -155,7 +155,7 @@ class Furnace extends Spawnable implements Container, Nameable{
 		$fuel = $this->inventory->getFuel();
 		$raw = $this->inventory->getSmelting();
 		$product = $this->inventory->getResult();
-		$smelt = $this->pos->getWorld()->getServer()->getCraftingManager()->matchFurnaceRecipe($raw);
+		$smelt = $this->pos->getWorldNonNull()->getServer()->getCraftingManager()->matchFurnaceRecipe($raw);
 		$canSmelt = ($smelt instanceof FurnaceRecipe and $raw->getCount() > 0 and (($smelt->getResult()->equals($product) and $product->getCount() < $product->getMaxStackSize()) or $product->isNull()));
 
 		if($this->remainingFuelTime <= 0 and $canSmelt and $fuel->getFuelTime() > 0 and $fuel->getCount() > 0){
@@ -169,7 +169,7 @@ class Furnace extends Spawnable implements Container, Nameable{
 				++$this->cookTime;
 
 				if($this->cookTime >= 200){ //10 seconds
-					$product = ItemFactory::get($smelt->getResult()->getId(), $smelt->getResult()->getMeta(), $product->getCount() + 1);
+					$product = ItemFactory::getInstance()->get($smelt->getResult()->getId(), $smelt->getResult()->getMeta(), $product->getCount() + 1);
 
 					$ev = new FurnaceSmeltEvent($this, $raw, $product);
 					$ev->call();
@@ -192,7 +192,7 @@ class Furnace extends Spawnable implements Container, Nameable{
 			$block = $this->getBlock();
 			if($block instanceof BlockFurnace and $block->isLit()){
 				$block->setLit(false);
-				$this->pos->getWorld()->setBlock($block->getPos(), $block);
+				$this->pos->getWorldNonNull()->setBlock($block->getPos(), $block);
 			}
 			$this->remainingFuelTime = $this->cookTime = $this->maxFuelTime = 0;
 		}

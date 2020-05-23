@@ -26,6 +26,7 @@ namespace pocketmine\network\mcpe\handler;
 use pocketmine\block\ItemFrame;
 use pocketmine\block\Sign;
 use pocketmine\block\utils\SignText;
+use pocketmine\entity\animation\ConsumingItemAnimation;
 use pocketmine\event\player\PlayerEditBookEvent;
 use pocketmine\inventory\transaction\action\InventoryAction;
 use pocketmine\inventory\transaction\CraftingTransaction;
@@ -35,9 +36,11 @@ use pocketmine\item\VanillaItems;
 use pocketmine\item\WritableBook;
 use pocketmine\item\WrittenBook;
 use pocketmine\math\Vector3;
-use pocketmine\nbt\NbtDataException;
+use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\nbt\tag\StringTag;
 use pocketmine\network\BadPacketException;
+use pocketmine\network\mcpe\convert\SkinAdapterSingleton;
+use pocketmine\network\mcpe\convert\TypeConverter;
 use pocketmine\network\mcpe\NetworkSession;
 use pocketmine\network\mcpe\protocol\ActorEventPacket;
 use pocketmine\network\mcpe\protocol\ActorFallPacket;
@@ -82,9 +85,8 @@ use pocketmine\network\mcpe\protocol\types\inventory\NormalTransactionData;
 use pocketmine\network\mcpe\protocol\types\inventory\ReleaseItemTransactionData;
 use pocketmine\network\mcpe\protocol\types\inventory\UseItemOnEntityTransactionData;
 use pocketmine\network\mcpe\protocol\types\inventory\UseItemTransactionData;
-use pocketmine\network\mcpe\protocol\types\SkinAdapterSingleton;
-use pocketmine\network\mcpe\serializer\NetworkNbtSerializer;
 use pocketmine\player\Player;
+use pocketmine\utils\AssumptionFailedError;
 use function array_push;
 use function base64_encode;
 use function count;
@@ -157,11 +159,11 @@ class InGamePacketHandler extends PacketHandler{
 
 		switch($packet->event){
 			case ActorEventPacket::EATING_ITEM: //TODO: ignore this and handle it server-side
-				if($packet->data === 0){
+				$item = $this->player->getInventory()->getItemInHand();
+				if($item->isNull()){
 					return false;
 				}
-
-				$this->player->broadcastEntityEvent(ActorEventPacket::EATING_ITEM, $packet->data);
+				$this->player->broadcastAnimation(new ConsumingItemAnimation($this->player, $this->player->getInventory()->getItemInHand()));
 				break;
 			default:
 				return false;
@@ -204,15 +206,18 @@ class InGamePacketHandler extends PacketHandler{
 
 		$isCrafting = false;
 		$isFinalCraftingPart = false;
+		$converter = TypeConverter::getInstance();
 		foreach($data->getActions() as $networkInventoryAction){
+			$old = $converter->netItemStackToCore($networkInventoryAction->oldItem);
+			$new = $converter->netItemStackToCore($networkInventoryAction->newItem);
 			if(
 				$networkInventoryAction->sourceType === NetworkInventoryAction::SOURCE_CONTAINER and
 				$networkInventoryAction->windowId === ContainerIds::UI and
 				$networkInventoryAction->inventorySlot === 50 and
-				!$networkInventoryAction->oldItem->equalsExact($networkInventoryAction->newItem)
+				!$old->equalsExact($new)
 			){
 				$isCrafting = true;
-				if(!$networkInventoryAction->oldItem->isNull() and $networkInventoryAction->newItem->isNull()){
+				if(!$old->isNull() and $new->isNull()){
 					$isFinalCraftingPart = true;
 				}
 			}elseif(
@@ -225,7 +230,7 @@ class InGamePacketHandler extends PacketHandler{
 			}
 
 			try{
-				$action = $networkInventoryAction->createInventoryAction($this->player);
+				$action = $converter->createInventoryAction($networkInventoryAction, $this->player);
 				if($action !== null){
 					$actions[] = $action;
 				}
@@ -253,6 +258,15 @@ class InGamePacketHandler extends PacketHandler{
 					$this->craftingTransaction->execute();
 				}catch(TransactionValidationException $e){
 					$this->session->getLogger()->debug("Failed to execute crafting transaction: " . $e->getMessage());
+
+					/*
+					 * TODO: HACK!
+					 * we can't resend the contents of the crafting window, so we force the client to close it instead.
+					 * So people don't whine about messy desync issues when someone cancels CraftItemEvent, or when a crafting
+					 * transaction goes wrong.
+					 */
+					$this->session->sendDataPacket(ContainerClosePacket::create(ContainerIds::NONE));
+
 					return false;
 				}finally{
 					$this->craftingTransaction = null;
@@ -346,7 +360,7 @@ class InGamePacketHandler extends PacketHandler{
 			}else{
 				$blocks[] = $blockPos;
 			}
-			$this->player->getLocation()->getWorld()->sendBlocks([$this->player], $blocks);
+			$this->player->getLocation()->getWorldNonNull()->sendBlocks([$this->player], $blocks);
 		}
 	}
 
@@ -539,20 +553,16 @@ class InGamePacketHandler extends PacketHandler{
 			return false;
 		}
 
-		$block = $this->player->getLocation()->getWorld()->getBlock($pos);
-		try{
-			$offset = 0;
-			$nbt = (new NetworkNbtSerializer())->read($packet->namedtag, $offset, 512)->mustGetCompoundTag();
-		}catch(NbtDataException $e){
-			throw new BadPacketException($e->getMessage(), 0, $e);
-		}
+		$block = $this->player->getLocation()->getWorldNonNull()->getBlock($pos);
+		$nbt = $packet->namedtag->getRoot();
+		if(!($nbt instanceof CompoundTag)) throw new AssumptionFailedError("PHPStan should ensure this is a CompoundTag"); //for phpstorm's benefit
 
 		if($block instanceof Sign){
 			if($nbt->hasTag("Text", StringTag::class)){
 				try{
 					$text = SignText::fromBlob($nbt->getString("Text"));
 				}catch(\InvalidArgumentException $e){
-					throw new BadPacketException("Invalid sign text update: " . $e->getMessage(), 0, $e);
+					throw BadPacketException::wrap($e, "Invalid sign text update");
 				}
 
 				try{
@@ -560,13 +570,13 @@ class InGamePacketHandler extends PacketHandler{
 						$this->player->getWorld()->sendBlocks([$this->player], [$pos]);
 					}
 				}catch(\UnexpectedValueException $e){
-					throw new BadPacketException($e->getMessage(), 0, $e);
+					throw BadPacketException::wrap($e);
 				}
 
 				return true;
 			}
 
-			$this->session->getLogger()->debug("Invalid sign update data: " . base64_encode($packet->namedtag));
+			$this->session->getLogger()->debug("Invalid sign update data: " . base64_encode($packet->namedtag->getEncodedNbt()));
 		}
 
 		return false;
@@ -741,6 +751,18 @@ class InGamePacketHandler extends PacketHandler{
 	}
 
 	public function handleLevelSoundEvent(LevelSoundEventPacket $packet) : bool{
+		//TODO: we want to block out this packet completely, but we don't yet know the full scope of sounds that the client sends us from here
+		switch($packet->sound){
+			case LevelSoundEventPacket::SOUND_ATTACK:
+			case LevelSoundEventPacket::SOUND_ATTACK_NODAMAGE:
+			case LevelSoundEventPacket::SOUND_ATTACK_STRONG: //TODO: reassess this, seems like the regular attack is never used ??
+			case LevelSoundEventPacket::SOUND_HIT: //block punch, maybe entity attack too?
+			case LevelSoundEventPacket::SOUND_LAND:
+			case LevelSoundEventPacket::SOUND_FALL:
+			case LevelSoundEventPacket::SOUND_FALL_SMALL:
+			case LevelSoundEventPacket::SOUND_FALL_BIG:
+				return true;
+		}
 		$this->player->getWorld()->broadcastPacketToViewers($this->player->getPosition(), $packet);
 		return true;
 	}

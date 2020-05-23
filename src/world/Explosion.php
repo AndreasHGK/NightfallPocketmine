@@ -72,7 +72,7 @@ class Explosion{
 			throw new \InvalidArgumentException("Position does not have a valid world");
 		}
 		$this->source = $center;
-		$this->world = $center->getWorld();
+		$this->world = $center->getWorldNonNull();
 
 		if($size <= 0){
 			throw new \InvalidArgumentException("Explosion radius must be greater than 0, got $size");
@@ -93,6 +93,7 @@ class Explosion{
 		}
 
 		$vector = new Vector3(0, 0, 0);
+		$blockFactory = BlockFactory::getInstance();
 
 		$currentChunk = null;
 		$currentSubChunk = null;
@@ -127,10 +128,10 @@ class Explosion{
 							$state = $this->subChunkHandler->currentSubChunk->getFullBlock($vBlockX & 0x0f, $vBlockY & 0x0f, $vBlockZ & 0x0f);
 
 							if($state !== 0){
-								$blastForce -= (BlockFactory::$blastResistance[$state] / 5 + 0.3) * $this->stepLen;
+								$blastForce -= ($blockFactory->blastResistance[$state] / 5 + 0.3) * $this->stepLen;
 								if($blastForce > 0){
 									if(!isset($this->affectedBlocks[$index = World::blockHash($vBlockX, $vBlockY, $vBlockZ)])){
-										$_block = BlockFactory::fromFullBlock($state);
+										$_block = $blockFactory->fromFullBlock($state);
 										$_block->position($this->world, $vBlockX, $vBlockY, $vBlockZ);
 										$this->affectedBlocks[$index] = $_block;
 									}
@@ -184,7 +185,7 @@ class Explosion{
 			$distance = $entityPos->distance($this->source) / $explosionSize;
 
 			if($distance <= 1){
-				$motion = $entityPos->subtract($this->source)->normalize();
+				$motion = $entityPos->subtractVector($this->source)->normalize();
 
 				$impact = (1 - $distance) * ($exposure = 1);
 
@@ -240,7 +241,7 @@ class Explosion{
 					$updateBlocks[$index] = true;
 				}
 			}
-			$send[] = $pos->subtract($source);
+			$send[] = $pos->subtractVector($source);
 		}
 
 		$this->world->addParticle($source, new HugeExplodeSeedParticle());

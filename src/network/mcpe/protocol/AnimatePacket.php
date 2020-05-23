@@ -25,8 +25,7 @@ namespace pocketmine\network\mcpe\protocol;
 
 #include <rules/DataPacket.h>
 
-use pocketmine\network\mcpe\handler\PacketHandler;
-use pocketmine\network\mcpe\serializer\NetworkBinaryStream;
+use pocketmine\network\mcpe\protocol\serializer\NetworkBinaryStream;
 
 class AnimatePacket extends DataPacket implements ClientboundPacket, ServerboundPacket{
 	public const NETWORK_ID = ProtocolInfo::ANIMATE_PACKET;
@@ -35,6 +34,7 @@ class AnimatePacket extends DataPacket implements ClientboundPacket, Serverbound
 
 	public const ACTION_STOP_SLEEP = 3;
 	public const ACTION_CRITICAL_HIT = 4;
+	public const ACTION_MAGICAL_CRITICAL_HIT = 5;
 	public const ACTION_ROW_RIGHT = 128;
 	public const ACTION_ROW_LEFT = 129;
 
@@ -74,7 +74,7 @@ class AnimatePacket extends DataPacket implements ClientboundPacket, Serverbound
 		}
 	}
 
-	public function handle(PacketHandler $handler) : bool{
+	public function handle(PacketHandlerInterface $handler) : bool{
 		return $handler->handleAnimate($this);
 	}
 }

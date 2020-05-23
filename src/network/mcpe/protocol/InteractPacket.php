@@ -25,15 +25,14 @@ namespace pocketmine\network\mcpe\protocol;
 
 #include <rules/DataPacket.h>
 
-use pocketmine\network\mcpe\handler\PacketHandler;
-use pocketmine\network\mcpe\serializer\NetworkBinaryStream;
+use pocketmine\network\mcpe\protocol\serializer\NetworkBinaryStream;
 
 class InteractPacket extends DataPacket implements ServerboundPacket{
 	public const NETWORK_ID = ProtocolInfo::INTERACT_PACKET;
 
 	public const ACTION_LEAVE_VEHICLE = 3;
 	public const ACTION_MOUSEOVER = 4;
-
+	public const ACTION_OPEN_NPC = 5;
 	public const ACTION_OPEN_INVENTORY = 6;
 
 	/** @var int */
@@ -71,7 +70,7 @@ class InteractPacket extends DataPacket implements ServerboundPacket{
 		}
 	}
 
-	public function handle(PacketHandler $handler) : bool{
+	public function handle(PacketHandlerInterface $handler) : bool{
 		return $handler->handleInteract($this);
 	}
 }

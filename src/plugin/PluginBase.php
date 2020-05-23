@@ -27,9 +27,9 @@ use pocketmine\command\Command;
 use pocketmine\command\CommandExecutor;
 use pocketmine\command\CommandSender;
 use pocketmine\command\PluginCommand;
-use pocketmine\command\PluginIdentifiableCommand;
 use pocketmine\scheduler\TaskScheduler;
 use pocketmine\Server;
+use pocketmine\utils\AssumptionFailedError;
 use pocketmine\utils\Config;
 use function count;
 use function dirname;
@@ -83,9 +83,9 @@ abstract class PluginBase implements Plugin, CommandExecutor{
 		$this->loader = $loader;
 		$this->server = $server;
 		$this->description = $description;
-		$this->dataFolder = rtrim($dataFolder, "\\/") . "/";
+		$this->dataFolder = rtrim($dataFolder, "/" . DIRECTORY_SEPARATOR) . "/";
 		//TODO: this is accessed externally via reflection, not unused
-		$this->file = rtrim($file, "\\/") . "/";
+		$this->file = rtrim($file, "/" . DIRECTORY_SEPARATOR) . "/";
 		$this->configFile = $this->dataFolder . "config.yml";
 
 		$prefix = $this->getDescription()->getPrefix();
@@ -222,15 +222,16 @@ abstract class PluginBase implements Plugin, CommandExecutor{
 	}
 
 	/**
-	 * @return Command|PluginIdentifiableCommand|null
+	 * @return Command|PluginOwned|null
+	 * @phpstan-return (Command&PluginOwned)|null
 	 */
 	public function getCommand(string $name){
 		$command = $this->getServer()->getPluginCommand($name);
-		if($command === null or $command->getPlugin() !== $this){
+		if($command === null or $command->getOwningPlugin() !== $this){
 			$command = $this->getServer()->getPluginCommand(strtolower($this->description->getName()) . ":" . $name);
 		}
 
-		if($command instanceof PluginIdentifiableCommand and $command->getPlugin() === $this){
+		if($command instanceof PluginOwned and $command->getOwningPlugin() === $this){
 			return $command;
 		}else{
 			return null;
@@ -275,7 +276,10 @@ abstract class PluginBase implements Plugin, CommandExecutor{
 			return false;
 		}
 
-		$ret = stream_copy_to_stream($resource, $fp = fopen($out, "wb")) > 0;
+		$fp = fopen($out, "wb");
+		if($fp === false) throw new AssumptionFailedError("fopen() should not fail with wb flags");
+
+		$ret = stream_copy_to_stream($resource, $fp) > 0;
 		fclose($fp);
 		fclose($resource);
 		return $ret;

@@ -27,22 +27,19 @@ declare(strict_types=1);
  */
 namespace pocketmine;
 
-use pocketmine\block\BlockFactory;
+use pocketmine\command\Command;
 use pocketmine\command\CommandReader;
 use pocketmine\command\CommandSender;
 use pocketmine\command\ConsoleCommandSender;
-use pocketmine\command\PluginIdentifiableCommand;
 use pocketmine\command\SimpleCommandMap;
 use pocketmine\crafting\CraftingManager;
-use pocketmine\entity\EntityFactory;
+use pocketmine\crafting\CraftingManagerFromDataHelper;
 use pocketmine\event\HandlerListManager;
 use pocketmine\event\player\PlayerDataSaveEvent;
 use pocketmine\event\server\CommandEvent;
 use pocketmine\event\server\DataPacketSendEvent;
 use pocketmine\event\server\QueryRegenerateEvent;
-use pocketmine\inventory\CreativeInventory;
 use pocketmine\item\enchantment\Enchantment;
-use pocketmine\item\ItemFactory;
 use pocketmine\lang\Language;
 use pocketmine\lang\LanguageNotFoundException;
 use pocketmine\lang\TranslationContainer;
@@ -52,15 +49,17 @@ use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\nbt\TreeRoot;
 use pocketmine\network\mcpe\compression\CompressBatchPromise;
 use pocketmine\network\mcpe\compression\CompressBatchTask;
-use pocketmine\network\mcpe\compression\Zlib as ZlibNetworkCompression;
+use pocketmine\network\mcpe\compression\Compressor;
+use pocketmine\network\mcpe\compression\ZlibCompressor;
 use pocketmine\network\mcpe\encryption\NetworkCipher;
 use pocketmine\network\mcpe\NetworkSession;
-use pocketmine\network\mcpe\PacketBatch;
 use pocketmine\network\mcpe\protocol\ClientboundPacket;
 use pocketmine\network\mcpe\protocol\ProtocolInfo;
+use pocketmine\network\mcpe\protocol\serializer\PacketBatch;
 use pocketmine\network\mcpe\raklib\RakLibInterface;
 use pocketmine\network\Network;
 use pocketmine\network\query\QueryHandler;
+use pocketmine\network\query\QueryInfo;
 use pocketmine\network\upnp\UPnP;
 use pocketmine\permission\BanList;
 use pocketmine\permission\DefaultPermissions;
@@ -73,12 +72,13 @@ use pocketmine\plugin\Plugin;
 use pocketmine\plugin\PluginGraylist;
 use pocketmine\plugin\PluginLoadOrder;
 use pocketmine\plugin\PluginManager;
+use pocketmine\plugin\PluginOwned;
 use pocketmine\plugin\ScriptPluginLoader;
 use pocketmine\resourcepacks\ResourcePackManager;
 use pocketmine\scheduler\AsyncPool;
-use pocketmine\scheduler\SendUsageTask;
 use pocketmine\snooze\SleeperHandler;
 use pocketmine\snooze\SleeperNotifier;
+use pocketmine\stats\SendUsageTask;
 use pocketmine\timings\Timings;
 use pocketmine\timings\TimingsHandler;
 use pocketmine\updater\AutoUpdater;
@@ -90,7 +90,7 @@ use pocketmine\utils\Process;
 use pocketmine\utils\Terminal;
 use pocketmine\utils\TextFormat;
 use pocketmine\utils\Utils;
-use pocketmine\utils\UUID;
+use pocketmine\uuid\UUID;
 use pocketmine\world\biome\Biome;
 use pocketmine\world\format\io\WorldProviderManager;
 use pocketmine\world\format\io\WritableWorldProvider;
@@ -116,7 +116,6 @@ use function get_class;
 use function getmypid;
 use function getopt;
 use function implode;
-use function ini_get;
 use function ini_set;
 use function is_a;
 use function is_array;
@@ -273,8 +272,8 @@ class Server{
 	 */
 	private $uniquePlayers = [];
 
-	/** @var QueryRegenerateEvent */
-	private $queryRegenerateTask;
+	/** @var QueryInfo */
+	private $queryInfo;
 
 	/** @var Config */
 	private $properties;
@@ -697,10 +696,11 @@ class Server{
 	}
 
 	/**
-	 * @return PluginIdentifiableCommand|null
+	 * @return Command|PluginOwned|null
+	 * @phpstan-return (Command&PluginOwned)|null
 	 */
 	public function getPluginCommand(string $name){
-		if(($command = $this->commandMap->getCommand($name)) instanceof PluginIdentifiableCommand){
+		if(($command = $this->commandMap->getCommand($name)) instanceof PluginOwned){
 			return $command;
 		}else{
 			return null;
@@ -916,17 +916,18 @@ class Server{
 
 			$this->asyncPool = new AsyncPool($poolSize, max(-1, (int) $this->getProperty("memory.async-worker-hard-limit", 256)), $this->autoloader, $this->logger);
 
+			$netCompressionThreshold = -1;
 			if($this->getProperty("network.batch-threshold", 256) >= 0){
-				ZlibNetworkCompression::$THRESHOLD = (int) $this->getProperty("network.batch-threshold", 256);
-			}else{
-				ZlibNetworkCompression::$THRESHOLD = -1;
+				$netCompressionThreshold = (int) $this->getProperty("network.batch-threshold", 256);
 			}
 
-			ZlibNetworkCompression::$LEVEL = $this->getProperty("network.compression-level", 7);
-			if(ZlibNetworkCompression::$LEVEL < 1 or ZlibNetworkCompression::$LEVEL > 9){
-				$this->logger->warning("Invalid network compression level " . ZlibNetworkCompression::$LEVEL . " set, setting to default 7");
-				ZlibNetworkCompression::$LEVEL = 7;
+			$netCompressionLevel = (int) $this->getProperty("network.compression-level", 7);
+			if($netCompressionLevel < 1 or $netCompressionLevel > 9){
+				$this->logger->warning("Invalid network compression level $netCompressionLevel set, setting to default 7");
+				$netCompressionLevel = 7;
 			}
+			ZlibCompressor::setInstance(new ZlibCompressor($netCompressionLevel, $netCompressionThreshold, ZlibCompressor::DEFAULT_MAX_DECOMPRESSION_SIZE));
+
 			$this->networkCompressionAsync = (bool) $this->getProperty("network.async-compression", true);
 
 			NetworkCipher::$ENABLED = (bool) $this->getProperty("network.enable-encryption", true);
@@ -984,14 +985,10 @@ class Server{
 
 			$this->commandMap = new SimpleCommandMap($this);
 
-			EntityFactory::init();
-			BlockFactory::init();
 			Enchantment::init();
-			ItemFactory::init();
-			CreativeInventory::init();
 			Biome::init();
 
-			$this->craftingManager = new CraftingManager();
+			$this->craftingManager = CraftingManagerFromDataHelper::make(\pocketmine\RESOURCE_PATH . '/vanilla/recipes.json');
 
 			$this->resourceManager = new ResourcePackManager($this->getDataPath() . "resource_packs" . DIRECTORY_SEPARATOR, $this->logger);
 
@@ -1011,22 +1008,23 @@ class Server{
 			$this->pluginManager->registerInterface(new PharPluginLoader($this->autoloader));
 			$this->pluginManager->registerInterface(new ScriptPluginLoader());
 
-			WorldProviderManager::init();
+			$providerManager = WorldProviderManager::getInstance();
 			if(
-				($format = WorldProviderManager::getProviderByName($formatName = (string) $this->getProperty("level-settings.default-format"))) !== null and
+				($format = $providerManager->getProviderByName($formatName = (string) $this->getProperty("level-settings.default-format"))) !== null and
 				is_a($format, WritableWorldProvider::class, true)
 			){
-				WorldProviderManager::setDefault($format);
+				$providerManager->setDefault($format);
 			}elseif($formatName !== ""){
 				$this->logger->warning($this->language->translateString("pocketmine.level.badDefaultFormat", [$formatName]));
 			}
 
-			GeneratorManager::registerDefaultGenerators();
-			$this->worldManager = new WorldManager($this);
+			$this->worldManager = new WorldManager($this, $this->dataPath . "/worlds");
+			$this->worldManager->setAutoSave($this->getConfigBool("auto-save", $this->worldManager->getAutoSave()));
+			$this->worldManager->setAutoSaveInterval((int) $this->getProperty("ticks-per.autosave", 6000));
 
 			$this->updater = new AutoUpdater($this, $this->getProperty("auto-updater.host", "update.pmmp.io"));
 
-			$this->queryRegenerateTask = new QueryRegenerateEvent($this);
+			$this->queryInfo = new QueryInfo($this);
 
 			register_shutdown_function([$this, "crashDump"]);
 
@@ -1042,7 +1040,7 @@ class Server{
 				if(!$this->worldManager->loadWorld($name, true)){
 					if(isset($options["generator"])){
 						$generatorOptions = explode(":", $options["generator"]);
-						$generator = GeneratorManager::getGenerator(array_shift($generatorOptions));
+						$generator = GeneratorManager::getInstance()->getGenerator(array_shift($generatorOptions));
 						if(count($options) > 0){
 							$options["preset"] = implode(":", $generatorOptions);
 						}
@@ -1065,7 +1063,7 @@ class Server{
 					$this->worldManager->generateWorld(
 						$default,
 						Generator::convertSeed($this->getConfigString("level-seed")),
-						GeneratorManager::getGenerator($this->getConfigString("level-type")),
+						GeneratorManager::getInstance()->getGenerator($this->getConfigString("level-type")),
 						["preset" => $this->getConfigString("generator-settings")]
 					);
 				}
@@ -1086,7 +1084,7 @@ class Server{
 			$this->logger->info($this->getLanguage()->translateString("pocketmine.server.networkStart", [$this->getIp(), $this->getPort()]));
 
 			if($this->getConfigBool("enable-query", true)){
-				$this->network->registerRawPacketHandler(new QueryHandler());
+				$this->network->registerRawPacketHandler(new QueryHandler($this));
 			}
 
 			foreach($this->getIPBans()->getEntries() as $entry){
@@ -1115,7 +1113,7 @@ class Server{
 			$this->logger->info($this->getLanguage()->translateString("pocketmine.server.startFinished", [round(microtime(true) - $this->startTime, 3)]));
 
 			//TODO: move console parts to a separate component
-			$consoleSender = new ConsoleCommandSender();
+			$consoleSender = new ConsoleCommandSender($this);
 			PermissionManager::getInstance()->subscribeToPermission(Server::BROADCAST_CHANNEL_ADMINISTRATIVE, $consoleSender);
 			PermissionManager::getInstance()->subscribeToPermission(Server::BROADCAST_CHANNEL_USERS, $consoleSender);
 
@@ -1259,16 +1257,30 @@ class Server{
 
 		$stream = PacketBatch::fromPackets(...$ev->getPackets());
 
-		if(ZlibNetworkCompression::$THRESHOLD < 0 or strlen($stream->getBuffer()) < ZlibNetworkCompression::$THRESHOLD){
-			foreach($recipients as $target){
-				foreach($ev->getPackets() as $pk){
-					$target->addToSendBuffer($pk);
+		/** @var Compressor[] $compressors */
+		$compressors = [];
+		/** @var NetworkSession[][] $compressorTargets */
+		$compressorTargets = [];
+		foreach($recipients as $recipient){
+			$compressor = $recipient->getCompressor();
+			$compressorId = spl_object_id($compressor);
+			//TODO: different compressors might be compatible, it might not be necessary to split them up by object
+			$compressors[$compressorId] = $compressor;
+			$compressorTargets[$compressorId][] = $recipient;
+		}
+
+		foreach($compressors as $compressorId => $compressor){
+			if(!$compressor->willCompress($stream->getBuffer())){
+				foreach($compressorTargets[$compressorId] as $target){
+					foreach($ev->getPackets() as $pk){
+						$target->addToSendBuffer($pk);
+					}
 				}
-			}
-		}else{
-			$promise = $this->prepareBatch($stream);
-			foreach($recipients as $target){
-				$target->queueCompressed($promise);
+			}else{
+				$promise = $this->prepareBatch($stream, $compressor);
+				foreach($compressorTargets[$compressorId] as $target){
+					$target->queueCompressed($promise);
+				}
 			}
 		}
 
@@ -1278,23 +1290,21 @@ class Server{
 	/**
 	 * Broadcasts a list of packets in a batch to a list of players
 	 */
-	public function prepareBatch(PacketBatch $stream, bool $forceSync = false) : CompressBatchPromise{
+	public function prepareBatch(PacketBatch $stream, Compressor $compressor, bool $forceSync = false) : CompressBatchPromise{
 		try{
 			Timings::$playerNetworkSendCompressTimer->startTiming();
 
-			$compressionLevel = ZlibNetworkCompression::$LEVEL;
 			$buffer = $stream->getBuffer();
-			if(ZlibNetworkCompression::$THRESHOLD < 0 or strlen($buffer) < ZlibNetworkCompression::$THRESHOLD){
-				$compressionLevel = 0; //Do not compress packets under the threshold
+			if(!$compressor->willCompress($buffer)){
 				$forceSync = true;
 			}
 
 			$promise = new CompressBatchPromise();
 			if(!$forceSync and $this->networkCompressionAsync){
-				$task = new CompressBatchTask($buffer, $compressionLevel, $promise);
+				$task = new CompressBatchTask($buffer, $promise, $compressor);
 				$this->asyncPool->submitTask($task);
 			}else{
-				$promise->resolve(ZlibNetworkCompression::compress($buffer, $compressionLevel));
+				$promise->resolve($compressor->compress($buffer));
 			}
 
 			return $promise;
@@ -1415,10 +1425,10 @@ class Server{
 	}
 
 	/**
-	 * @return QueryRegenerateEvent
+	 * @return QueryInfo
 	 */
 	public function getQueryInformation(){
-		return $this->queryRegenerateTask;
+		return $this->queryInfo;
 	}
 
 	/**
@@ -1671,7 +1681,9 @@ class Server{
 			$this->currentTPS = 20;
 			$this->currentUse = 0;
 
-			($this->queryRegenerateTask = new QueryRegenerateEvent($this))->call();
+			$queryRegenerateEvent = new QueryRegenerateEvent(new QueryInfo($this));
+			$queryRegenerateEvent->call();
+			$this->queryInfo = $queryRegenerateEvent->getQueryInfo();
 
 			$this->network->updateName();
 			$this->network->resetStatistics();

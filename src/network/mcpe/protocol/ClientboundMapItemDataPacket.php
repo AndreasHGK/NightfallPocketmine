@@ -25,13 +25,11 @@ namespace pocketmine\network\mcpe\protocol;
 
 #include <rules/DataPacket.h>
 
-use pocketmine\network\BadPacketException;
-use pocketmine\network\mcpe\handler\PacketHandler;
+use pocketmine\color\Color;
+use pocketmine\network\mcpe\protocol\serializer\NetworkBinaryStream;
 use pocketmine\network\mcpe\protocol\types\DimensionIds;
 use pocketmine\network\mcpe\protocol\types\MapDecoration;
 use pocketmine\network\mcpe\protocol\types\MapTrackedObject;
-use pocketmine\network\mcpe\serializer\NetworkBinaryStream;
-use pocketmine\utils\Color;
 use function count;
 #ifndef COMPILE
 use pocketmine\utils\Binary;
@@ -99,7 +97,7 @@ class ClientboundMapItemDataPacket extends DataPacket implements ClientboundPack
 				}elseif($object->type === MapTrackedObject::TYPE_ENTITY){
 					$object->entityUniqueId = $in->getEntityUniqueId();
 				}else{
-					throw new BadPacketException("Unknown map object type $object->type");
+					throw new PacketDecodeException("Unknown map object type $object->type");
 				}
 				$this->trackedEntities[] = $object;
 			}
@@ -123,7 +121,7 @@ class ClientboundMapItemDataPacket extends DataPacket implements ClientboundPack
 
 			$count = $in->getUnsignedVarInt();
 			if($count !== $this->width * $this->height){
-				throw new BadPacketException("Expected colour count of " . ($this->height * $this->width) . " (height $this->height * width $this->width), got $count");
+				throw new PacketDecodeException("Expected colour count of " . ($this->height * $this->width) . " (height $this->height * width $this->width), got $count");
 			}
 
 			for($y = 0; $y < $this->height; ++$y){
@@ -204,7 +202,7 @@ class ClientboundMapItemDataPacket extends DataPacket implements ClientboundPack
 		}
 	}
 
-	public function handle(PacketHandler $handler) : bool{
+	public function handle(PacketHandlerInterface $handler) : bool{
 		return $handler->handleClientboundMapItemData($this);
 	}
 }

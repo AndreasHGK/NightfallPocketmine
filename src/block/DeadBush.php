@@ -47,7 +47,7 @@ class DeadBush extends Flowable{
 
 	public function onNearbyBlockChange() : void{
 		if($this->getSide(Facing::DOWN)->isTransparent()){
-			$this->pos->getWorld()->useBreakOn($this->pos);
+			$this->pos->getWorldNonNull()->useBreakOn($this->pos);
 		}
 	}
 
@@ -59,6 +59,10 @@ class DeadBush extends Flowable{
 		}
 
 		return parent::getDrops($item);
+	}
+
+	public function isAffectedBySilkTouch() : bool{
+		return true;
 	}
 
 	public function getFlameEncouragement() : int{

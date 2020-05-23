@@ -68,7 +68,7 @@ class RedstoneOre extends Opaque{
 	public function onInteract(Item $item, int $face, Vector3 $clickVector, ?Player $player = null) : bool{
 		if(!$this->lit){
 			$this->lit = true;
-			$this->pos->getWorld()->setBlock($this->pos, $this); //no return here - this shouldn't prevent block placement
+			$this->pos->getWorldNonNull()->setBlock($this->pos, $this); //no return here - this shouldn't prevent block placement
 		}
 		return false;
 	}
@@ -76,7 +76,7 @@ class RedstoneOre extends Opaque{
 	public function onNearbyBlockChange() : void{
 		if(!$this->lit){
 			$this->lit = true;
-			$this->pos->getWorld()->setBlock($this->pos, $this);
+			$this->pos->getWorldNonNull()->setBlock($this->pos, $this);
 		}
 	}
 
@@ -87,7 +87,7 @@ class RedstoneOre extends Opaque{
 	public function onRandomTick() : void{
 		if($this->lit){
 			$this->lit = false;
-			$this->pos->getWorld()->setBlock($this->pos, $this);
+			$this->pos->getWorldNonNull()->setBlock($this->pos, $this);
 		}
 	}
 
@@ -95,6 +95,10 @@ class RedstoneOre extends Opaque{
 		return [
 			VanillaItems::REDSTONE_DUST()->setCount(mt_rand(4, 5))
 		];
+	}
+
+	public function isAffectedBySilkTouch() : bool{
+		return true;
 	}
 
 	protected function getXpDropAmount() : int{

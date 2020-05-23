@@ -25,10 +25,9 @@ namespace pocketmine\network\mcpe\protocol;
 
 #include <rules/DataPacket.h>
 
-use pocketmine\network\mcpe\handler\PacketHandler;
+use pocketmine\network\mcpe\protocol\serializer\NetworkBinaryStream;
 use pocketmine\network\mcpe\protocol\types\SkinData;
-use pocketmine\network\mcpe\serializer\NetworkBinaryStream;
-use pocketmine\utils\UUID;
+use pocketmine\uuid\UUID;
 
 class PlayerSkinPacket extends DataPacket implements ClientboundPacket, ServerboundPacket{
 	public const NETWORK_ID = ProtocolInfo::PLAYER_SKIN_PACKET;
@@ -47,6 +46,7 @@ class PlayerSkinPacket extends DataPacket implements ClientboundPacket, Serverbo
 		$this->skin = $in->getSkin();
 		$this->newSkinName = $in->getString();
 		$this->oldSkinName = $in->getString();
+		$this->skin->setVerified($in->getBool());
 	}
 
 	protected function encodePayload(NetworkBinaryStream $out) : void{
@@ -54,9 +54,10 @@ class PlayerSkinPacket extends DataPacket implements ClientboundPacket, Serverbo
 		$out->putSkin($this->skin);
 		$out->putString($this->newSkinName);
 		$out->putString($this->oldSkinName);
+		$out->putBool($this->skin->isVerified());
 	}
 
-	public function handle(PacketHandler $handler) : bool{
+	public function handle(PacketHandlerInterface $handler) : bool{
 		return $handler->handlePlayerSkin($this);
 	}
 }

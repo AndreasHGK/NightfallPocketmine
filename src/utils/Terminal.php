@@ -28,6 +28,7 @@ use function fopen;
 use function function_exists;
 use function getenv;
 use function is_array;
+use function sapi_windows_vt100_support;
 use function stream_isatty;
 use const PHP_EOL;
 
@@ -91,6 +92,7 @@ abstract class Terminal{
 
 	private static function detectFormattingCodesSupport() : bool{
 		$stdout = fopen("php://stdout", "w");
+		if($stdout === false) throw new AssumptionFailedError("Opening php://stdout should never fail");
 		$result = (
 			stream_isatty($stdout) and //STDOUT isn't being piped
 			(
@@ -175,14 +177,14 @@ abstract class Terminal{
 		}
 
 		switch(Utils::getOS()){
-			case "linux":
-			case "mac":
-			case "bsd":
+			case Utils::OS_LINUX:
+			case Utils::OS_MACOS:
+			case Utils::OS_BSD:
 				self::getEscapeCodes();
 				return;
 
-			case "win":
-			case "android":
+			case Utils::OS_WINDOWS:
+			case Utils::OS_ANDROID:
 				self::getFallbackEscapeCodes();
 				return;
 		}

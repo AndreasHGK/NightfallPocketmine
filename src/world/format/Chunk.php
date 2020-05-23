@@ -26,7 +26,6 @@ declare(strict_types=1);
 
 namespace pocketmine\world\format;
 
-use pocketmine\block\BlockFactory;
 use pocketmine\block\BlockLegacyIds;
 use pocketmine\block\tile\Tile;
 use pocketmine\block\tile\TileFactory;
@@ -40,12 +39,8 @@ use pocketmine\world\World;
 use function array_fill;
 use function array_filter;
 use function array_map;
-use function assert;
-use function chr;
 use function count;
-use function ord;
 use function str_repeat;
-use function strlen;
 
 class Chunk{
 	public const DIRTY_FLAG_TERRAIN = 1 << 0;
@@ -82,13 +77,10 @@ class Chunk{
 	/** @var Entity[] */
 	protected $entities = [];
 
-	/**
-	 * @var \SplFixedArray|int[]
-	 * @phpstan-var \SplFixedArray<int>
-	 */
+	/** @var HeightArray */
 	protected $heightMap;
 
-	/** @var string */
+	/** @var BiomeArray */
 	protected $biomeIds;
 
 	/** @var CompoundTag[]|null */
@@ -101,9 +93,8 @@ class Chunk{
 	 * @param SubChunk[]    $subChunks
 	 * @param CompoundTag[] $entities
 	 * @param CompoundTag[] $tiles
-	 * @param int[]         $heightMap
 	 */
-	public function __construct(int $chunkX, int $chunkZ, array $subChunks = [], ?array $entities = null, ?array $tiles = null, string $biomeIds = "", array $heightMap = []){
+	public function __construct(int $chunkX, int $chunkZ, array $subChunks = [], ?array $entities = null, ?array $tiles = null, ?BiomeArray $biomeIds = null, ?HeightArray $heightMap = null){
 		$this->x = $chunkX;
 		$this->z = $chunkZ;
 
@@ -113,20 +104,9 @@ class Chunk{
 			$this->subChunks[$y] = $subChunks[$y] ?? new SubChunk(BlockLegacyIds::AIR << 4, []);
 		}
 
-		if(count($heightMap) === 256){
-			$this->heightMap = \SplFixedArray::fromArray($heightMap);
-		}else{
-			assert(count($heightMap) === 0, "Wrong HeightMap value count, expected 256, got " . count($heightMap));
-			$val = ($this->subChunks->getSize() * 16);
-			$this->heightMap = \SplFixedArray::fromArray(array_fill(0, 256, $val));
-		}
-
-		if(strlen($biomeIds) === 256){
-			$this->biomeIds = $biomeIds;
-		}else{
-			assert($biomeIds === "", "Wrong BiomeIds value count, expected 256, got " . strlen($biomeIds));
-			$this->biomeIds = str_repeat("\x00", 256);
-		}
+		$val = ($this->subChunks->getSize() * 16);
+		$this->heightMap = $heightMap ?? new HeightArray(array_fill(0, 256, $val));
+		$this->biomeIds = $biomeIds ?? new BiomeArray(str_repeat("\x00", 256));
 
 		$this->NBTtiles = $tiles;
 		$this->NBTentities = $entities;
@@ -264,7 +244,7 @@ class Chunk{
 	 * @param int $z 0-15
 	 */
 	public function getHeightMap(int $x, int $z) : int{
-		return $this->heightMap[($z << 4) | $x];
+		return $this->heightMap->get($x, $z);
 	}
 
 	/**
@@ -274,16 +254,21 @@ class Chunk{
 	 * @param int $z 0-15
 	 */
 	public function setHeightMap(int $x, int $z, int $value) : void{
-		$this->heightMap[($z << 4) | $x] = $value;
+		$this->heightMap->set($x, $z, $value);
 	}
 
 	/**
 	 * Recalculates the heightmap for the whole chunk.
+	 *
+	 * @param \SplFixedArray|int[]  $lightFilters
+	 * @param \SplFixedArray|bool[] $lightDiffusers
+	 * @phpstan-param \SplFixedArray<int>  $lightFilters
+	 * @phpstan-param \SplFixedArray<bool> $lightDiffusers
 	 */
-	public function recalculateHeightMap() : void{
+	public function recalculateHeightMap(\SplFixedArray $lightFilters, \SplFixedArray $lightDiffusers) : void{
 		for($z = 0; $z < 16; ++$z){
 			for($x = 0; $x < 16; ++$x){
-				$this->recalculateHeightMapColumn($x, $z);
+				$this->recalculateHeightMapColumn($x, $z, $lightFilters, $lightDiffusers);
 			}
 		}
 	}
@@ -293,13 +278,17 @@ class Chunk{
 	 *
 	 * @param int $x 0-15
 	 * @param int $z 0-15
+	 * @param \SplFixedArray|int[]  $lightFilters
+	 * @param \SplFixedArray|bool[] $lightDiffusers
+	 * @phpstan-param \SplFixedArray<int>  $lightFilters
+	 * @phpstan-param \SplFixedArray<bool> $lightDiffusers
 	 *
 	 * @return int New calculated heightmap value (0-256 inclusive)
 	 */
-	public function recalculateHeightMapColumn(int $x, int $z) : int{
+	public function recalculateHeightMapColumn(int $x, int $z, \SplFixedArray $lightFilters, \SplFixedArray $lightDiffusers) : int{
 		$y = $this->getHighestBlockAt($x, $z);
 		for(; $y >= 0; --$y){
-			if(BlockFactory::$lightFilter[$state = $this->getFullBlock($x, $y, $z)] > 1 or BlockFactory::$diffusesSkyLight[$state]){
+			if($lightFilters[$state = $this->getFullBlock($x, $y, $z)] > 1 or $lightDiffusers[$state]){
 				break;
 			}
 		}
@@ -313,9 +302,12 @@ class Chunk{
 	 * This does not cater for adjacent sky light, this performs direct sky light population only. This may cause some strange visual artifacts
 	 * if the chunk is light-populated after being terrain-populated.
 	 *
+	 * @param \SplFixedArray|int[] $lightFilters
+	 * @phpstan-param \SplFixedArray<int> $lightFilters
+	 *
 	 * TODO: fast adjacent light spread
 	 */
-	public function populateSkyLight() : void{
+	public function populateSkyLight(\SplFixedArray $lightFilters) : void{
 		$this->setAllBlockSkyLight(0);
 
 		for($x = 0; $x < 16; ++$x){
@@ -329,7 +321,7 @@ class Chunk{
 
 				$light = 15;
 				for(; $y >= 0; --$y){
-					$light -= BlockFactory::$lightFilter[$this->getFullBlock($x, $y, $z)];
+					$light -= $lightFilters[$this->getFullBlock($x, $y, $z)];
 					if($light <= 0){
 						break;
 					}
@@ -348,7 +340,7 @@ class Chunk{
 	 * @return int 0-255
 	 */
 	public function getBiomeId(int $x, int $z) : int{
-		return ord($this->biomeIds[($z << 4) | $x]);
+		return $this->biomeIds->get($x, $z);
 	}
 
 	/**
@@ -359,7 +351,7 @@ class Chunk{
 	 * @param int $biomeId 0-255
 	 */
 	public function setBiomeId(int $x, int $z, int $biomeId) : void{
-		$this->biomeIds[($z << 4) | $x] = chr($biomeId & 0xff);
+		$this->biomeIds->set($x, $z, $biomeId);
 		$this->dirtyFlags |= self::DIRTY_FLAG_BIOMES;
 	}
 
@@ -496,9 +488,10 @@ class Chunk{
 		if($this->NBTentities !== null){
 			$this->dirtyFlags |= self::DIRTY_FLAG_ENTITIES;
 			$world->timings->syncChunkLoadEntitiesTimer->startTiming();
+			$entityFactory = EntityFactory::getInstance();
 			foreach($this->NBTentities as $nbt){
 				try{
-					$entity = EntityFactory::createFromData($world, $nbt);
+					$entity = $entityFactory->createFromData($world, $nbt);
 					if(!($entity instanceof Entity)){
 						$saveIdTag = $nbt->getTag("id") ?? $nbt->getTag("identifier");
 						$saveId = "<unknown>";
@@ -522,8 +515,9 @@ class Chunk{
 		if($this->NBTtiles !== null){
 			$this->dirtyFlags |= self::DIRTY_FLAG_TILES;
 			$world->timings->syncChunkLoadTileEntitiesTimer->startTiming();
+			$tileFactory = TileFactory::getInstance();
 			foreach($this->NBTtiles as $nbt){
-				if(($tile = TileFactory::createFromData($world, $nbt)) !== null){
+				if(($tile = $tileFactory->createFromData($world, $nbt)) !== null){
 					$world->addTile($tile);
 				}else{
 					$world->getLogger()->warning("Chunk $this->x $this->z: Deleted unknown tile entity type " . $nbt->getString("id", "<unknown>"));
@@ -537,25 +531,21 @@ class Chunk{
 	}
 
 	public function getBiomeIdArray() : string{
-		return $this->biomeIds;
+		return $this->biomeIds->getData();
 	}
 
 	/**
 	 * @return int[]
 	 */
 	public function getHeightMapArray() : array{
-		return $this->heightMap->toArray();
+		return $this->heightMap->getValues();
 	}
 
 	/**
 	 * @param int[] $values
-	 * @throws \InvalidArgumentException
 	 */
 	public function setHeightMapArray(array $values) : void{
-		if(count($values) !== 256){
-			throw new \InvalidArgumentException("Expected exactly 256 values");
-		}
-		$this->heightMap = \SplFixedArray::fromArray($values);
+		$this->heightMap = new HeightArray($values);
 	}
 
 	public function isDirty() : bool{

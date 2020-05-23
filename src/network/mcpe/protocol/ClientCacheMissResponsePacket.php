@@ -25,9 +25,8 @@ namespace pocketmine\network\mcpe\protocol;
 
 #include <rules/DataPacket.h>
 
-use pocketmine\network\mcpe\handler\PacketHandler;
+use pocketmine\network\mcpe\protocol\serializer\NetworkBinaryStream;
 use pocketmine\network\mcpe\protocol\types\ChunkCacheBlob;
-use pocketmine\network\mcpe\serializer\NetworkBinaryStream;
 use function count;
 
 class ClientCacheMissResponsePacket extends DataPacket implements ClientboundPacket{
@@ -71,7 +70,7 @@ class ClientCacheMissResponsePacket extends DataPacket implements ClientboundPac
 		}
 	}
 
-	public function handle(PacketHandler $handler) : bool{
+	public function handle(PacketHandlerInterface $handler) : bool{
 		return $handler->handleClientCacheMissResponse($this);
 	}
 }

@@ -69,7 +69,7 @@ abstract class Tile{
 
 	public function saveNBT() : CompoundTag{
 		$nbt = CompoundTag::create()
-			->setString(self::TAG_ID, TileFactory::getSaveId(get_class($this)))
+			->setString(self::TAG_ID, TileFactory::getInstance()->getSaveId(get_class($this)))
 			->setInt(self::TAG_X, $this->pos->getFloorX())
 			->setInt(self::TAG_Y, $this->pos->getFloorY())
 			->setInt(self::TAG_Z, $this->pos->getFloorZ());
@@ -95,7 +95,7 @@ abstract class Tile{
 	}
 
 	public function getBlock() : Block{
-		return $this->pos->getWorld()->getBlock($this->pos);
+		return $this->pos->getWorldNonNull()->getBlock($this->pos);
 	}
 
 	public function getPos() : Position{
@@ -130,9 +130,9 @@ abstract class Tile{
 			$this->closed = true;
 
 			if($this->pos->isValid()){
-				$this->pos->getWorld()->removeTile($this);
-				$this->pos->setWorld(null);
+				$this->pos->getWorldNonNull()->removeTile($this);
 			}
+			$this->pos = null;
 		}
 	}
 }

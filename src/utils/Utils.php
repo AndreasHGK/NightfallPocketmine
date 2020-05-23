@@ -28,11 +28,11 @@ declare(strict_types=1);
 namespace pocketmine\utils;
 
 use DaveRandom\CallbackValidator\CallbackType;
+use pocketmine\uuid\UUID;
 use function array_combine;
 use function array_map;
 use function array_reverse;
 use function array_values;
-use function base64_decode;
 use function bin2hex;
 use function chunk_split;
 use function count;
@@ -51,10 +51,7 @@ use function gettype;
 use function implode;
 use function is_array;
 use function is_object;
-use function is_readable;
 use function is_string;
-use function json_decode;
-use function json_last_error_msg;
 use function mb_check_encoding;
 use function ob_end_clean;
 use function ob_get_contents;
@@ -71,11 +68,11 @@ use function str_split;
 use function stripos;
 use function strlen;
 use function strpos;
-use function strtr;
 use function substr;
 use function sys_get_temp_dir;
 use function trim;
 use function xdebug_get_function_stack;
+use const DIRECTORY_SEPARATOR;
 use const PHP_EOL;
 use const PHP_INT_MAX;
 use const PHP_INT_SIZE;
@@ -87,6 +84,14 @@ use const STR_PAD_RIGHT;
  * Big collection of functions
  */
 class Utils{
+	public const OS_WINDOWS = "win";
+	public const OS_IOS = "ios";
+	public const OS_MACOS = "mac";
+	public const OS_ANDROID = "android";
+	public const OS_LINUX = "linux";
+	public const OS_BSD = "bsd";
+	public const OS_UNKNOWN = "other";
+
 	/** @var string|null */
 	private static $os;
 	/** @var UUID|null */
@@ -114,7 +119,12 @@ class Utils{
 			//non-class function
 			return $func->getName();
 		}
-		return "closure@" . Filesystem::cleanPath($func->getFileName()) . "#L" . $func->getStartLine();
+		$filename = $func->getFileName();
+
+		return "closure@" . ($filename !== false ?
+				Filesystem::cleanPath($filename) . "#L" . $func->getStartLine() :
+				"internal"
+			);
 	}
 
 	/**
@@ -125,7 +135,12 @@ class Utils{
 	public static function getNiceClassName(object $obj) : string{
 		$reflect = new \ReflectionClass($obj);
 		if($reflect->isAnonymous()){
-			return "anonymous@" . Filesystem::cleanPath($reflect->getFileName()) . "#L" . $reflect->getStartLine();
+			$filename = $reflect->getFileName();
+
+			return "anonymous@" . ($filename !== false ?
+					Filesystem::cleanPath($filename) . "#L" . $reflect->getStartLine() :
+					"internal"
+				);
 		}
 
 		return $reflect->getName();
@@ -169,14 +184,14 @@ class Utils{
 		}
 
 		$machine = php_uname("a");
-		$machine .= file_exists("/proc/cpuinfo") ? implode(preg_grep("/(model name|Processor|Serial)/", file("/proc/cpuinfo"))) : "";
+		$machine .= ($cpuinfo = @file("/proc/cpuinfo")) !== false ? implode(preg_grep("/(model name|Processor|Serial)/", $cpuinfo)) : "";
 		$machine .= sys_get_temp_dir();
 		$machine .= $extra;
 		$os = Utils::getOS();
-		if($os === "win"){
+		if($os === Utils::OS_WINDOWS){
 			@exec("ipconfig /ALL", $mac);
 			$mac = implode("\n", $mac);
-			if(preg_match_all("#Physical Address[. ]{1,}: ([0-9A-F\\-]{17})#", $mac, $matches)){
+			if(preg_match_all("#Physical Address[. ]{1,}: ([0-9A-F\\-]{17})#", $mac, $matches) > 0){
 				foreach($matches[1] as $i => $v){
 					if($v == "00-00-00-00-00-00"){
 						unset($matches[1][$i]);
@@ -184,13 +199,13 @@ class Utils{
 				}
 				$machine .= implode(" ", $matches[1]); //Mac Addresses
 			}
-		}elseif($os === "linux"){
+		}elseif($os === Utils::OS_LINUX){
 			if(file_exists("/etc/machine-id")){
 				$machine .= file_get_contents("/etc/machine-id");
 			}else{
 				@exec("ifconfig 2>/dev/null", $mac);
 				$mac = implode("\n", $mac);
-				if(preg_match_all("#HWaddr[ \t]{1,}([0-9a-f:]{17})#", $mac, $matches)){
+				if(preg_match_all("#HWaddr[ \t]{1,}([0-9a-f:]{17})#", $mac, $matches) > 0){
 					foreach($matches[1] as $i => $v){
 						if($v == "00:00:00:00:00:00"){
 							unset($matches[1][$i]);
@@ -199,9 +214,9 @@ class Utils{
 					$machine .= implode(" ", $matches[1]); //Mac Addresses
 				}
 			}
-		}elseif($os === "android"){
+		}elseif($os === Utils::OS_ANDROID){
 			$machine .= @file_get_contents("/system/build.prop");
-		}elseif($os === "mac"){
+		}elseif($os === Utils::OS_MACOS){
 			$machine .= `system_profiler SPHardwareDataType | grep UUID`;
 		}
 		$data = $machine . PHP_MAXPATHLEN;
@@ -236,22 +251,22 @@ class Utils{
 			$uname = php_uname("s");
 			if(stripos($uname, "Darwin") !== false){
 				if(strpos(php_uname("m"), "iP") === 0){
-					self::$os = "ios";
+					self::$os = self::OS_IOS;
 				}else{
-					self::$os = "mac";
+					self::$os = self::OS_MACOS;
 				}
 			}elseif(stripos($uname, "Win") !== false or $uname === "Msys"){
-				self::$os = "win";
+				self::$os = self::OS_WINDOWS;
 			}elseif(stripos($uname, "Linux") !== false){
 				if(@file_exists("/system/build.prop")){
-					self::$os = "android";
+					self::$os = self::OS_ANDROID;
 				}else{
-					self::$os = "linux";
+					self::$os = self::OS_LINUX;
 				}
 			}elseif(stripos($uname, "BSD") !== false or $uname === "DragonFly"){
-				self::$os = "bsd";
+				self::$os = self::OS_BSD;
 			}else{
-				self::$os = "other";
+				self::$os = self::OS_UNKNOWN;
 			}
 		}
 
@@ -268,25 +283,25 @@ class Utils{
 		}
 
 		switch(Utils::getOS()){
-			case "linux":
-			case "android":
-				if(file_exists("/proc/cpuinfo")){
-					foreach(file("/proc/cpuinfo") as $l){
+			case Utils::OS_LINUX:
+			case Utils::OS_ANDROID:
+				if(($cpuinfo = @file('/proc/cpuinfo')) !== false){
+					foreach($cpuinfo as $l){
 						if(preg_match('/^processor[ \t]*:[ \t]*[0-9]+$/m', $l) > 0){
 							++$processors;
 						}
 					}
-				}elseif(is_readable("/sys/devices/system/cpu/present")){
-					if(preg_match("/^([0-9]+)\\-([0-9]+)$/", trim(file_get_contents("/sys/devices/system/cpu/present")), $matches) > 0){
+				}elseif(($cpuPresent = @file_get_contents("/sys/devices/system/cpu/present")) !== false){
+					if(preg_match("/^([0-9]+)\\-([0-9]+)$/", trim($cpuPresent), $matches) > 0){
 						$processors = (int) ($matches[2] - $matches[1]);
 					}
 				}
 				break;
-			case "bsd":
-			case "mac":
+			case Utils::OS_BSD:
+			case Utils::OS_MACOS:
 				$processors = (int) `sysctl -n hw.ncpu`;
 				break;
-			case "win":
+			case Utils::OS_WINDOWS:
 				$processors = (int) getenv("NUMBER_OF_PROCESSORS");
 				break;
 		}
@@ -353,36 +368,14 @@ class Utils{
 	}
 
 	/**
-	 * @return mixed[] array of claims
-	 * @phpstan-return array<string, mixed>
-	 *
-	 * @throws \UnexpectedValueException
-	 */
-	public static function getJwtClaims(string $token) : array{
-		$v = explode(".", $token);
-		if(count($v) !== 3){
-			throw new \UnexpectedValueException("Expected exactly 3 JWT parts, got " . count($v));
-		}
-		$payloadB64 = $v[1];
-		$payloadJSON = base64_decode(strtr($payloadB64, '-_', '+/'), true);
-		if($payloadJSON === false){
-			throw new \UnexpectedValueException("Invalid base64 JWT payload");
-		}
-		$result = json_decode($payloadJSON, true);
-		if(!is_array($result)){
-			throw new \UnexpectedValueException("Failed to decode JWT payload JSON: " . json_last_error_msg());
-		}
-
-		return $result;
-	}
-
-	/**
 	 * @param object $value
 	 */
 	public static function getReferenceCount($value, bool $includeCurrent = true) : int{
 		ob_start();
 		debug_zval_dump($value);
-		$ret = explode("\n", ob_get_contents());
+		$contents = ob_get_contents();
+		if($contents === false) throw new AssumptionFailedError("ob_get_contents() should never return false here");
+		$ret = explode("\n", $contents);
 		ob_end_clean();
 
 		if(count($ret) >= 1 and preg_match('/^.* refcount\\(([0-9]+)\\)\\{$/', trim($ret[0]), $m) > 0){
@@ -457,11 +450,21 @@ class Utils{
 	 * @return string[] an array of tagName => tag value. If the tag has no value, an empty string is used as the value.
 	 */
 	public static function parseDocComment(string $docComment) : array{
-		preg_match_all('/(*ANYCRLF)^[\t ]*\* @([a-zA-Z]+)(?:[\t ]+(.+))?[\t ]*$/m', $docComment, $matches);
+		$rawDocComment = substr($docComment, 3, -2); //remove the opening and closing markers
+		if($rawDocComment === false){ //usually empty doc comment, but this is safer and statically analysable
+			return [];
+		}
+		preg_match_all('/(*ANYCRLF)^[\t ]*(?:\* )?@([a-zA-Z]+)(?:[\t ]+(.+?))?[\t ]*$/m', $rawDocComment, $matches);
 
-		return array_combine($matches[1], $matches[2]);
+		$result = array_combine($matches[1], $matches[2]);
+		if($result === false) throw new AssumptionFailedError("array_combine() doesn't return false with two equal-sized arrays");
+		return $result;
 	}
 
+	/**
+	 * @phpstan-param class-string $className
+	 * @phpstan-param class-string $baseName
+	 */
 	public static function testValidInstance(string $className, string $baseName) : void{
 		try{
 			$base = new \ReflectionClass($baseName);

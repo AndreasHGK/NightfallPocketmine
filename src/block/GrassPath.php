@@ -42,7 +42,7 @@ class GrassPath extends Transparent{
 
 	public function onNearbyBlockChange() : void{
 		if($this->getSide(Facing::UP)->isSolid()){
-			$this->pos->getWorld()->setBlock($this->pos, VanillaBlocks::DIRT());
+			$this->pos->getWorldNonNull()->setBlock($this->pos, VanillaBlocks::DIRT());
 		}
 	}
 
@@ -50,5 +50,9 @@ class GrassPath extends Transparent{
 		return [
 			VanillaBlocks::DIRT()->asItem()
 		];
+	}
+
+	public function isAffectedBySilkTouch() : bool{
+		return true;
 	}
 }

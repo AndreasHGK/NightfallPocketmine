@@ -23,22 +23,34 @@ declare(strict_types=1);
 
 namespace pocketmine\network\mcpe\handler;
 
-use pocketmine\entity\Skin;
+use Mdanter\Ecc\Crypto\Key\PublicKeyInterface;
 use pocketmine\event\player\PlayerPreLoginEvent;
+use pocketmine\network\BadPacketException;
 use pocketmine\network\mcpe\auth\ProcessLoginTask;
+use pocketmine\network\mcpe\convert\SkinAdapterSingleton;
+use pocketmine\network\mcpe\JwtException;
+use pocketmine\network\mcpe\JwtUtils;
 use pocketmine\network\mcpe\NetworkSession;
 use pocketmine\network\mcpe\protocol\LoginPacket;
 use pocketmine\network\mcpe\protocol\PlayStatusPacket;
 use pocketmine\network\mcpe\protocol\ProtocolInfo;
-use pocketmine\network\mcpe\protocol\types\SkinAdapterSingleton;
+use pocketmine\network\mcpe\protocol\types\login\AuthenticationData;
+use pocketmine\network\mcpe\protocol\types\login\ClientData;
+use pocketmine\network\mcpe\protocol\types\login\ClientDataPersonaPieceTintColor;
+use pocketmine\network\mcpe\protocol\types\login\ClientDataPersonaSkinPiece;
+use pocketmine\network\mcpe\protocol\types\login\JwtChain;
+use pocketmine\network\mcpe\protocol\types\PersonaPieceTintColor;
+use pocketmine\network\mcpe\protocol\types\PersonaSkinPiece;
 use pocketmine\network\mcpe\protocol\types\SkinAnimation;
 use pocketmine\network\mcpe\protocol\types\SkinData;
 use pocketmine\network\mcpe\protocol\types\SkinImage;
 use pocketmine\player\Player;
 use pocketmine\player\PlayerInfo;
 use pocketmine\Server;
-use pocketmine\utils\UUID;
+use pocketmine\uuid\UUID;
+use function array_map;
 use function base64_decode;
+use function is_array;
 
 /**
  * Handles the initial login phase of the session. This handler is used as the initial state.
@@ -49,10 +61,30 @@ class LoginPacketHandler extends PacketHandler{
 	private $server;
 	/** @var NetworkSession */
 	private $session;
+	/**
+	 * @var \Closure
+	 * @phpstan-var \Closure(PlayerInfo) : void
+	 */
+	private $playerInfoConsumer;
+	/**
+	 * @var \Closure
+	 * @phpstan-var \Closure(bool, bool, ?string, ?PublicKeyInterface) : void
+	 */
+	private $authCallback;
 
-	public function __construct(Server $server, NetworkSession $session){
+	/**
+	 * @phpstan-param \Closure(PlayerInfo) : void $playerInfoConsumer
+	 * @phpstan-param \Closure(bool $isAuthenticated, bool $authRequired, ?string $error, ?PublicKeyInterface $clientPubKey) : void $authCallback
+	 */
+	public function __construct(Server $server, NetworkSession $session, \Closure $playerInfoConsumer, \Closure $authCallback){
 		$this->session = $session;
 		$this->server = $server;
+		$this->playerInfoConsumer = $playerInfoConsumer;
+		$this->authCallback = $authCallback;
+	}
+
+	private static function dummy() : void{
+		echo PublicKeyInterface::class; //this prevents the import getting removed by tools that don't understand phpstan
 	}
 
 	public function handleLogin(LoginPacket $packet) : bool{
@@ -68,38 +100,57 @@ class LoginPacketHandler extends PacketHandler{
 			return true;
 		}
 
-		if(!Player::isValidUserName($packet->extraData[LoginPacket::I_USERNAME])){
+		$extraData = $this->fetchAuthData($packet->chainDataJwt);
+
+		if(!Player::isValidUserName($extraData->displayName)){
 			$this->session->disconnect("disconnectionScreen.invalidName");
 
 			return true;
 		}
 
+		$clientData = $this->parseClientData($packet->clientDataJwt);
+		$safeB64Decode = static function(string $base64, string $context) : string{
+			$result = base64_decode($base64, true);
+			if($result === false){
+				throw new \InvalidArgumentException("$context: Malformed base64, cannot be decoded");
+			}
+			return $result;
+		};
 		try{
 			/** @var SkinAnimation[] $animations */
 			$animations = [];
-			foreach($packet->clientData[LoginPacket::I_ANIMATION_IMAGES] as $animation){
+			foreach($clientData->AnimatedImageData as $k => $animation){
 				$animations[] = new SkinAnimation(
 					new SkinImage(
-						$animation[LoginPacket::I_ANIMATION_IMAGE_HEIGHT],
-						$animation[LoginPacket::I_ANIMATION_IMAGE_WIDTH],
-						base64_decode($animation[LoginPacket::I_ANIMATION_IMAGE_DATA], true)
+						$animation->ImageHeight,
+						$animation->ImageWidth,
+						$safeB64Decode($animation->Image, "AnimatedImageData.$k.Image")
 					),
-					$animation[LoginPacket::I_ANIMATION_IMAGE_TYPE],
-					$animation[LoginPacket::I_ANIMATION_IMAGE_FRAMES]
+					$animation->Type,
+					$animation->Frames
 				);
 			}
 			$skinData = new SkinData(
-				$packet->clientData[LoginPacket::I_SKIN_ID],
-				base64_decode($packet->clientData[LoginPacket::I_SKIN_RESOURCE_PATCH], true),
-				new SkinImage($packet->clientData[LoginPacket::I_SKIN_HEIGHT], $packet->clientData[LoginPacket::I_SKIN_WIDTH], base64_decode($packet->clientData[LoginPacket::I_SKIN_DATA], true)),
+				$clientData->SkinId,
+				$safeB64Decode($clientData->SkinResourcePatch, "SkinResourcePatch"),
+				new SkinImage($clientData->SkinImageHeight, $clientData->SkinImageWidth, $safeB64Decode($clientData->SkinData, "SkinData")),
 				$animations,
-				new SkinImage($packet->clientData[LoginPacket::I_CAPE_HEIGHT], $packet->clientData[LoginPacket::I_CAPE_WIDTH], base64_decode($packet->clientData[LoginPacket::I_CAPE_DATA], true)),
-				base64_decode($packet->clientData[LoginPacket::I_GEOMETRY_DATA], true),
-				base64_decode($packet->clientData[LoginPacket::I_ANIMATION_DATA], true),
-				$packet->clientData[LoginPacket::I_PREMIUM_SKIN],
-				$packet->clientData[LoginPacket::I_PERSONA_SKIN],
-				$packet->clientData[LoginPacket::I_PERSONA_CAPE_ON_CLASSIC_SKIN],
-				$packet->clientData[LoginPacket::I_CAPE_ID]
+				new SkinImage($clientData->CapeImageHeight, $clientData->CapeImageWidth, $safeB64Decode($clientData->CapeData, "CapeData")),
+				$safeB64Decode($clientData->SkinGeometryData, "SkinGeometryData"),
+				$safeB64Decode($clientData->SkinAnimationData, "SkinAnimationData"),
+				$clientData->PremiumSkin,
+				$clientData->PersonaSkin,
+				$clientData->CapeOnClassicSkin,
+				$clientData->CapeId,
+				null,
+				$clientData->ArmSize,
+				$clientData->SkinColor,
+				array_map(function(ClientDataPersonaSkinPiece $piece) : PersonaSkinPiece{
+					return new PersonaSkinPiece($piece->PieceId, $piece->PieceType, $piece->PackId, $piece->IsDefault, $piece->ProductId);
+				}, $clientData->PersonaPieces),
+				array_map(function(ClientDataPersonaPieceTintColor $tint) : PersonaPieceTintColor{
+					return new PersonaPieceTintColor($tint->PieceType, $tint->Colors);
+				}, $clientData->PieceTintColors)
 			);
 
 			$skin = SkinAdapterSingleton::get()->fromSkinData($skinData);
@@ -110,13 +161,18 @@ class LoginPacketHandler extends PacketHandler{
 			return true;
 		}
 
-		$this->session->setPlayerInfo(new PlayerInfo(
-			$packet->extraData[LoginPacket::I_USERNAME],
-			UUID::fromString($packet->extraData[LoginPacket::I_UUID]),
+		try{
+			$uuid = UUID::fromString($extraData->identity);
+		}catch(\InvalidArgumentException $e){
+			throw BadPacketException::wrap($e, "Failed to parse login UUID");
+		}
+		($this->playerInfoConsumer)(new PlayerInfo(
+			$extraData->displayName,
+			$uuid,
 			$skin,
-			$packet->clientData[LoginPacket::I_LANGUAGE_CODE],
-			$packet->extraData[LoginPacket::I_XUID],
-			$packet->clientData
+			$clientData->LanguageCode,
+			$extraData->XUID,
+			(array) $clientData
 		));
 
 		$ev = new PlayerPreLoginEvent(
@@ -147,14 +203,75 @@ class LoginPacketHandler extends PacketHandler{
 	}
 
 	/**
+	 * @throws BadPacketException
+	 */
+	protected function fetchAuthData(JwtChain $chain) : AuthenticationData{
+		/** @var AuthenticationData|null $extraData */
+		$extraData = null;
+		foreach($chain->chain as $k => $jwt){
+			//validate every chain element
+			try{
+				[, $claims, ] = JwtUtils::parse($jwt);
+			}catch(JwtException $e){
+				throw BadPacketException::wrap($e);
+			}
+			if(isset($claims["extraData"])){
+				if($extraData !== null){
+					throw new BadPacketException("Found 'extraData' more than once in chainData");
+				}
+
+				if(!is_array($claims["extraData"])){
+					throw new BadPacketException("'extraData' key should be an array");
+				}
+				$mapper = new \JsonMapper;
+				$mapper->bEnforceMapType = false; //TODO: we don't really need this as an array, but right now we don't have enough models
+				$mapper->bExceptionOnMissingData = true;
+				$mapper->bExceptionOnUndefinedProperty = true;
+				try{
+					/** @var AuthenticationData $extraData */
+					$extraData = $mapper->map($claims['extraData'], new AuthenticationData);
+				}catch(\JsonMapper_Exception $e){
+					throw BadPacketException::wrap($e);
+				}
+			}
+		}
+		if($extraData === null){
+			throw new BadPacketException("'extraData' not found in chain data");
+		}
+		return $extraData;
+	}
+
+	/**
+	 * @throws BadPacketException
+	 */
+	protected function parseClientData(string $clientDataJwt) : ClientData{
+		try{
+			[, $clientDataClaims, ] = JwtUtils::parse($clientDataJwt);
+		}catch(JwtException $e){
+			throw BadPacketException::wrap($e);
+		}
+
+		$mapper = new \JsonMapper;
+		$mapper->bEnforceMapType = false; //TODO: we don't really need this as an array, but right now we don't have enough models
+		$mapper->bExceptionOnMissingData = true;
+		$mapper->bExceptionOnUndefinedProperty = true;
+		try{
+			$clientData = $mapper->map($clientDataClaims, new ClientData);
+		}catch(\JsonMapper_Exception $e){
+			throw BadPacketException::wrap($e);
+		}
+		return $clientData;
+	}
+
+	/**
 	 * TODO: This is separated for the purposes of allowing plugins (like Specter) to hack it and bypass authentication.
 	 * In the future this won't be necessary.
 	 *
 	 * @throws \InvalidArgumentException
 	 */
 	protected function processLogin(LoginPacket $packet, bool $authRequired) : void{
-		$this->server->getAsyncPool()->submitTask(new ProcessLoginTask($this->session, $packet, $authRequired));
-		$this->session->setHandler(NullPacketHandler::getInstance()); //drop packets received during login verification
+		$this->server->getAsyncPool()->submitTask(new ProcessLoginTask($packet, $authRequired, $this->authCallback));
+		$this->session->setHandler(null); //drop packets received during login verification
 	}
 
 	protected function isCompatibleProtocol(int $protocolVersion) : bool{

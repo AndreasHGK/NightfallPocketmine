@@ -27,6 +27,7 @@ use pocketmine\event\server\LowMemoryEvent;
 use pocketmine\scheduler\DumpWorkerMemoryTask;
 use pocketmine\scheduler\GarbageCollectionTask;
 use pocketmine\timings\Timings;
+use pocketmine\utils\AssumptionFailedError;
 use pocketmine\utils\Process;
 use pocketmine\utils\Utils;
 use function arsort;
@@ -302,11 +303,10 @@ class MemoryManager{
 	 * Static memory dumper accessible from any thread.
 	 *
 	 * @param mixed   $startingObject
-	 *
-	 * @throws \ReflectionException
 	 */
 	public static function dumpMemory($startingObject, string $outputFolder, int $maxNesting, int $maxStringSize, \Logger $logger) : void{
 		$hardLimit = ini_get('memory_limit');
+		if($hardLimit === false) throw new AssumptionFailedError("memory_limit INI directive should always exist");
 		ini_set('memory_limit', '-1');
 		gc_disable();
 
@@ -406,8 +406,8 @@ class MemoryManager{
 					"properties" => []
 				];
 
-				if($reflection->getParentClass()){
-					$info["parent"] = $reflection->getParentClass()->getName();
+				if(($parent = $reflection->getParentClass()) !== false){
+					$info["parent"] = $parent->getName();
 				}
 
 				if(count($reflection->getInterfaceNames()) > 0){

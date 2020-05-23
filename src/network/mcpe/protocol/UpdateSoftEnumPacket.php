@@ -25,8 +25,7 @@ namespace pocketmine\network\mcpe\protocol;
 
 #include <rules/DataPacket.h>
 
-use pocketmine\network\mcpe\handler\PacketHandler;
-use pocketmine\network\mcpe\serializer\NetworkBinaryStream;
+use pocketmine\network\mcpe\protocol\serializer\NetworkBinaryStream;
 use function count;
 
 class UpdateSoftEnumPacket extends DataPacket implements ClientboundPacket{
@@ -60,7 +59,7 @@ class UpdateSoftEnumPacket extends DataPacket implements ClientboundPacket{
 		$out->putByte($this->type);
 	}
 
-	public function handle(PacketHandler $handler) : bool{
+	public function handle(PacketHandlerInterface $handler) : bool{
 		return $handler->handleUpdateSoftEnum($this);
 	}
 }

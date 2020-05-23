@@ -26,14 +26,14 @@ namespace pocketmine\network\mcpe\protocol;
 #include <rules/DataPacket.h>
 
 use pocketmine\math\Vector3;
-use pocketmine\network\mcpe\handler\PacketHandler;
-use pocketmine\network\mcpe\serializer\NetworkBinaryStream;
+use pocketmine\network\mcpe\protocol\serializer\NetworkBinaryStream;
 
 class MoveActorAbsolutePacket extends DataPacket implements ClientboundPacket, ServerboundPacket{
 	public const NETWORK_ID = ProtocolInfo::MOVE_ACTOR_ABSOLUTE_PACKET;
 
 	public const FLAG_GROUND = 0x01;
 	public const FLAG_TELEPORT = 0x02;
+	public const FLAG_FORCE_MOVE_LOCAL_ENTITY = 0x04;
 
 	/** @var int */
 	public $entityRuntimeId;
@@ -66,7 +66,7 @@ class MoveActorAbsolutePacket extends DataPacket implements ClientboundPacket, S
 		$out->putByteRotation($this->zRot);
 	}
 
-	public function handle(PacketHandler $handler) : bool{
+	public function handle(PacketHandlerInterface $handler) : bool{
 		return $handler->handleMoveActorAbsolute($this);
 	}
 }
