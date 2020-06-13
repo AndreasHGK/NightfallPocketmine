@@ -347,12 +347,13 @@ class World implements ChunkManager{
 
 		$this->time = $this->provider->getWorldData()->getTime();
 
-		$this->chunkTickRadius = min($this->server->getViewDistance(), max(1, (int) $this->server->getProperty("chunk-ticking.tick-radius", 4)));
-		$this->chunksPerTick = (int) $this->server->getProperty("chunk-ticking.per-tick", 40);
-		$this->tickedBlocksPerSubchunkPerTick = (int) $this->server->getProperty("chunk-ticking.blocks-per-subchunk-per-tick", self::DEFAULT_TICKED_BLOCKS_PER_SUBCHUNK_PER_TICK);
-		$this->chunkPopulationQueueSize = (int) $this->server->getProperty("chunk-generation.population-queue-size", 2);
+		$cfg = $this->server->getConfigGroup();
+		$this->chunkTickRadius = min($this->server->getViewDistance(), max(1, (int) $cfg->getProperty("chunk-ticking.tick-radius", 4)));
+		$this->chunksPerTick = (int) $cfg->getProperty("chunk-ticking.per-tick", 40);
+		$this->tickedBlocksPerSubchunkPerTick = (int) $cfg->getProperty("chunk-ticking.blocks-per-subchunk-per-tick", self::DEFAULT_TICKED_BLOCKS_PER_SUBCHUNK_PER_TICK);
+		$this->chunkPopulationQueueSize = (int) $cfg->getProperty("chunk-generation.population-queue-size", 2);
 
-		$dontTickBlocks = array_fill_keys($this->server->getProperty("chunk-ticking.disable-block-ticking", []), true);
+		$dontTickBlocks = array_fill_keys($cfg->getProperty("chunk-ticking.disable-block-ticking", []), true);
 
 		foreach(BlockFactory::getInstance()->getAllKnownStates() as $state){
 			if(!isset($dontTickBlocks[$state->getId()]) and $state->ticksRandomly()){
@@ -1536,6 +1537,10 @@ class World implements ChunkManager{
 
 		if($player !== null){
 			$ev = new PlayerInteractEvent($player, $item, $blockClicked, $clickVector, $face, PlayerInteractEvent::RIGHT_CLICK_BLOCK);
+			if($player->isSpectator()){
+				$ev->setCancelled(); //set it to cancelled so plugins can bypass this
+			}
+
 			$ev->call();
 			if(!$ev->isCancelled()){
 				if((!$player->isSneaking() or $item->isNull()) and $blockClicked->onInteract($item, $face, $clickVector, $player)){
@@ -1571,19 +1576,14 @@ class World implements ChunkManager{
 			if(count($this->getCollidingEntities($collisionBox)) > 0){
 				return false;  //Entity in block
 			}
-
-			if($player !== null){
-				if(($diff = $player->getNextPosition()->subtractVector($player->getPosition())) and $diff->lengthSquared() > 0.00001){
-					$bb = $player->getBoundingBox()->offsetCopy($diff->x, $diff->y, $diff->z);
-					if($collisionBox->intersectsWith($bb)){
-						return false; //Inside player BB
-					}
-				}
-			}
 		}
 
 		if($player !== null){
 			$ev = new BlockPlaceEvent($player, $hand, $blockReplace, $blockClicked, $item);
+			if($player->isSpectator()){
+				$ev->setCancelled();
+			}
+
 			if($player->isAdventure(true) and !$ev->isCancelled()){
 				$canPlace = false;
 				$itemParser = LegacyStringToItemParser::getInstance();

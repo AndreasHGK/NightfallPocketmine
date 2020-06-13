@@ -763,6 +763,9 @@ abstract class Entity{
 		if($teleport){
 			$pk->flags |= MoveActorAbsolutePacket::FLAG_TELEPORT;
 		}
+		if($this->onGround){
+			$pk->flags |= MoveActorAbsolutePacket::FLAG_GROUND;
+		}
 
 		$this->getWorld()->broadcastPacketToViewers($this->location, $pk);
 	}
@@ -1439,7 +1442,7 @@ abstract class Entity{
 		$this->setMotion($this->temporalVector->setComponents(0, 0, 0));
 		if($this->setPositionAndRotation($pos, $yaw ?? $this->location->yaw, $pitch ?? $this->location->pitch)){
 			$this->resetFallDistance();
-			$this->onGround = true;
+			$this->setForceMovementUpdate();
 
 			$this->updateMovement(true);
 
