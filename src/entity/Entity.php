@@ -28,7 +28,6 @@ namespace pocketmine\entity;
 
 use pocketmine\block\Block;
 use pocketmine\block\Water;
-use pocketmine\data\bedrock\LegacyEntityIdToStringIdMap;
 use pocketmine\entity\animation\Animation;
 use pocketmine\event\entity\EntityDamageEvent;
 use pocketmine\event\entity\EntityDespawnEvent;
@@ -41,9 +40,6 @@ use pocketmine\math\Facing;
 use pocketmine\math\Vector2;
 use pocketmine\math\Vector3;
 use pocketmine\nbt\tag\CompoundTag;
-use pocketmine\nbt\tag\DoubleTag;
-use pocketmine\nbt\tag\FloatTag;
-use pocketmine\nbt\tag\ListTag;
 use pocketmine\nbt\tag\StringTag;
 use pocketmine\network\mcpe\protocol\AddActorPacket;
 use pocketmine\network\mcpe\protocol\MoveActorAbsolutePacket;
@@ -80,6 +76,16 @@ abstract class Entity{
 
 	public const MOTION_THRESHOLD = 0.00001;
 
+	/** @var int */
+	private static $entityCount = 1;
+
+	/**
+	 * Returns a new runtime entity ID for a new entity.
+	 */
+	public static function nextRuntimeId() : int{
+		return self::$entityCount++;
+	}
+
 	/** @var Player[] */
 	protected $hasSpawned = [];
 
@@ -108,9 +114,6 @@ abstract class Entity{
 	protected $lastMotion;
 	/** @var bool */
 	protected $forceMovementUpdate = false;
-
-	/** @var Vector3 */
-	public $temporalVector;
 
 	/** @var AxisAlignedBB */
 	public $boundingBox;
@@ -215,24 +218,17 @@ abstract class Entity{
 	/** @var int|null */
 	protected $targetId = null;
 
-	public function __construct(World $world, CompoundTag $nbt){
+	public function __construct(Location $location, ?CompoundTag $nbt = null){
 		$this->timings = Timings::getEntityTimings($this);
-
-		$this->temporalVector = new Vector3();
 
 		if($this->eyeHeight === null){
 			$this->eyeHeight = $this->height / 2 + 0.1;
 		}
 
-		$this->id = EntityFactory::nextRuntimeId();
-		$this->server = $world->getServer();
+		$this->id = self::nextRuntimeId();
+		$this->server = $location->getWorldNonNull()->getServer();
 
-		/** @var float[] $pos */
-		$pos = $nbt->getListTag("Pos")->getAllValues();
-		/** @var float[] $rotation */
-		$rotation = $nbt->getListTag("Rotation")->getAllValues();
-
-		$this->location = new Location($pos[0], $pos[1], $pos[2], $rotation[0], $rotation[1], $world);
+		$this->location = $location->asLocation();
 		assert(
 			!is_nan($this->location->x) and !is_infinite($this->location->x) and
 			!is_nan($this->location->y) and !is_infinite($this->location->y) and
@@ -247,11 +243,10 @@ abstract class Entity{
 			throw new \InvalidStateException("Cannot create entities in unloaded chunks");
 		}
 
-		$this->motion = new Vector3(0, 0, 0);
-		if($nbt->hasTag("Motion", ListTag::class)){
-			/** @var float[] $motion */
-			$motion = $nbt->getListTag("Motion")->getAllValues();
-			$this->setMotion($this->temporalVector->setComponents(...$motion));
+		if($nbt !== null){
+			$this->motion = EntityDataHelper::parseVec3($nbt, "Motion", true);
+		}else{
+			$this->motion = new Vector3(0, 0, 0);
 		}
 
 		$this->resetLastMovements();
@@ -261,7 +256,7 @@ abstract class Entity{
 		$this->attributeMap = new AttributeMap();
 		$this->addAttributes();
 
-		$this->initEntity($nbt);
+		$this->initEntity($nbt ?? new CompoundTag());
 
 		$this->chunk->addEntity($this);
 		$this->getWorld()->addEntity($this);
@@ -460,7 +455,8 @@ abstract class Entity{
 	}
 
 	public function saveNBT() : CompoundTag{
-		$nbt = new CompoundTag();
+		$nbt = EntityDataHelper::createBaseNBT($this->location, $this->motion, $this->location->yaw, $this->location->pitch);
+
 		if(!($this instanceof Player)){
 			$nbt->setString("id", EntityFactory::getInstance()->getSaveId(get_class($this)));
 
@@ -469,23 +465,6 @@ abstract class Entity{
 				$nbt->setByte("CustomNameVisible", $this->isNameTagVisible() ? 1 : 0);
 			}
 		}
-
-		$nbt->setTag("Pos", new ListTag([
-			new DoubleTag($this->location->x),
-			new DoubleTag($this->location->y),
-			new DoubleTag($this->location->z)
-		]));
-
-		$nbt->setTag("Motion", new ListTag([
-			new DoubleTag($this->motion->x),
-			new DoubleTag($this->motion->y),
-			new DoubleTag($this->motion->z)
-		]));
-
-		$nbt->setTag("Rotation", new ListTag([
-			new FloatTag($this->location->yaw),
-			new FloatTag($this->location->pitch)
-		]));
 
 		$nbt->setFloat("FallDistance", $this->fallDistance);
 		$nbt->setShort("Fire", $this->fireTicks);
@@ -934,7 +913,7 @@ abstract class Entity{
 		$x = -$xz * sin(deg2rad($this->location->yaw));
 		$z = $xz * cos(deg2rad($this->location->yaw));
 
-		return $this->temporalVector->setComponents($x, $y, $z)->normalize();
+		return (new Vector3($x, $y, $z))->normalize();
 	}
 
 	public function getDirectionPlane() : Vector2{
@@ -1283,7 +1262,7 @@ abstract class Entity{
 	}
 
 	protected function checkBlockCollision() : void{
-		$vector = $this->temporalVector->setComponents(0, 0, 0);
+		$vector = new Vector3(0, 0, 0);
 
 		foreach($this->getBlocksAround() as $block){
 			$block->onEntityInside($this);
@@ -1439,7 +1418,7 @@ abstract class Entity{
 		}
 		$pos = $ev->getTo();
 
-		$this->setMotion($this->temporalVector->setComponents(0, 0, 0));
+		$this->setMotion(new Vector3(0, 0, 0));
 		if($this->setPositionAndRotation($pos, $yaw ?? $this->location->yaw, $pitch ?? $this->location->pitch)){
 			$this->resetFallDistance();
 			$this->setForceMovementUpdate();
@@ -1490,7 +1469,7 @@ abstract class Entity{
 		return $this->hasSpawned;
 	}
 
-	abstract public static function getNetworkTypeId() : int;
+	abstract public static function getNetworkTypeId() : string;
 
 	/**
 	 * Called by spawnTo() to send whatever packets needed to spawn the entity to the client.
@@ -1498,7 +1477,7 @@ abstract class Entity{
 	protected function sendSpawnPacket(Player $player) : void{
 		$pk = new AddActorPacket();
 		$pk->entityRuntimeId = $this->getId();
-		$pk->type = LegacyEntityIdToStringIdMap::getInstance()->legacyToString(static::getNetworkTypeId());
+		$pk->type = static::getNetworkTypeId();
 		$pk->position = $this->location->asVector3();
 		$pk->motion = $this->getMotion();
 		$pk->yaw = $this->location->yaw;

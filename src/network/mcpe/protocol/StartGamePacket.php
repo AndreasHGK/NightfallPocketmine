@@ -27,10 +27,10 @@ namespace pocketmine\network\mcpe\protocol;
 
 use pocketmine\math\Vector3;
 use pocketmine\nbt\tag\ListTag;
-use pocketmine\network\mcpe\protocol\serializer\NetworkBinaryStream;
+use pocketmine\network\mcpe\protocol\serializer\PacketSerializer;
 use pocketmine\network\mcpe\protocol\types\CacheableNbt;
 use pocketmine\network\mcpe\protocol\types\EducationEditionOffer;
-use pocketmine\network\mcpe\protocol\types\GameRuleType;
+use pocketmine\network\mcpe\protocol\types\GameRule;
 use pocketmine\network\mcpe\protocol\types\GeneratorType;
 use pocketmine\network\mcpe\protocol\types\MultiplayerGameVisibility;
 use pocketmine\network\mcpe\protocol\types\PlayerPermissions;
@@ -97,12 +97,10 @@ class StartGamePacket extends DataPacket implements ClientboundPacket{
 	/** @var bool */
 	public $isTexturePacksRequired = true;
 	/**
-	 * @var mixed[][]
-	 * @phpstan-var array<string, array{0: int, 1: bool|int|float}>
+	 * @var GameRule[]
+	 * @phpstan-var array<string, GameRule>
 	 */
-	public $gameRules = [ //TODO: implement this
-		"naturalregeneration" => [GameRuleType::BOOL, false] //Hack for client side regeneration
-	];
+	public $gameRules = [];
 	/** @var bool */
 	public $hasBonusChestEnabled = false;
 	/** @var bool */
@@ -158,7 +156,7 @@ class StartGamePacket extends DataPacket implements ClientboundPacket{
 	 */
 	public $itemTable = [];
 
-	protected function decodePayload(NetworkBinaryStream $in) : void{
+	protected function decodePayload(PacketSerializer $in) : void{
 		$this->entityUniqueId = $in->getEntityUniqueId();
 		$this->entityRuntimeId = $in->getEntityRuntimeId();
 		$this->playerGamemode = $in->getVarInt();
@@ -228,7 +226,7 @@ class StartGamePacket extends DataPacket implements ClientboundPacket{
 		$this->multiplayerCorrelationId = $in->getString();
 	}
 
-	protected function encodePayload(NetworkBinaryStream $out) : void{
+	protected function encodePayload(PacketSerializer $out) : void{
 		$out->putEntityUniqueId($this->entityUniqueId);
 		$out->putEntityRuntimeId($this->entityRuntimeId);
 		$out->putVarInt($this->playerGamemode);
@@ -293,7 +291,7 @@ class StartGamePacket extends DataPacket implements ClientboundPacket{
 	 * @phpstan-param array<string, int> $table
 	 */
 	private static function serializeItemTable(array $table) : string{
-		$stream = new NetworkBinaryStream();
+		$stream = new PacketSerializer();
 		$stream->putUnsignedVarInt(count($table));
 		foreach($table as $name => $legacyId){
 			$stream->putString($name);

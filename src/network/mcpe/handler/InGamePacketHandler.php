@@ -27,6 +27,7 @@ use pocketmine\block\ItemFrame;
 use pocketmine\block\Sign;
 use pocketmine\block\utils\SignText;
 use pocketmine\entity\animation\ConsumingItemAnimation;
+use pocketmine\entity\InvalidSkinException;
 use pocketmine\event\player\PlayerEditBookEvent;
 use pocketmine\inventory\transaction\action\InventoryAction;
 use pocketmine\inventory\transaction\CraftingTransaction;
@@ -95,6 +96,7 @@ use function implode;
 use function json_decode;
 use function json_encode;
 use function json_last_error_msg;
+use function max;
 use function microtime;
 use function preg_match;
 use function strlen;
@@ -582,7 +584,8 @@ class InGamePacketHandler extends PacketHandler{
 	}
 
 	public function handleSetPlayerGameType(SetPlayerGameTypePacket $packet) : bool{
-		if($packet->gamemode !== $this->player->getGamemode()->getMagicNumber()){
+		$converter = TypeConverter::getInstance();
+		if(!$converter->protocolGameModeToCore($packet->gamemode)->equals($this->player->getGamemode())){
 			//Set this back to default. TODO: handle this properly
 			$this->session->syncGameMode($this->player->getGamemode(), true);
 		}
@@ -632,7 +635,12 @@ class InGamePacketHandler extends PacketHandler{
 	}
 
 	public function handlePlayerSkin(PlayerSkinPacket $packet) : bool{
-		return $this->player->changeSkin(SkinAdapterSingleton::get()->fromSkinData($packet->skin), $packet->newSkinName, $packet->oldSkinName);
+		try{
+			$skin = SkinAdapterSingleton::get()->fromSkinData($packet->skin);
+		}catch(InvalidSkinException $e){
+			throw BadPacketException::wrap($e, "Invalid skin in PlayerSkinPacket");
+		}
+		return $this->player->changeSkin($skin, $packet->newSkinName, $packet->oldSkinName);
 	}
 
 	public function handleSubClientLogin(SubClientLoginPacket $packet) : bool{

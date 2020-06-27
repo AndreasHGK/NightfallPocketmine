@@ -29,6 +29,7 @@ use pocketmine\network\mcpe\convert\TypeConverter;
 use pocketmine\network\mcpe\NetworkSession;
 use pocketmine\network\mcpe\protocol\RequestChunkRadiusPacket;
 use pocketmine\network\mcpe\protocol\StartGamePacket;
+use pocketmine\network\mcpe\protocol\types\BoolGameRule;
 use pocketmine\network\mcpe\protocol\types\DimensionIds;
 use pocketmine\network\mcpe\StaticPacketCache;
 use pocketmine\player\Player;
@@ -59,13 +60,13 @@ class PreSpawnPacketHandler extends PacketHandler{
 		$pk = new StartGamePacket();
 		$pk->entityUniqueId = $this->player->getId();
 		$pk->entityRuntimeId = $this->player->getId();
-		$pk->playerGamemode = TypeConverter::getInstance()->getClientFriendlyGamemode($this->player->getGamemode());
+		$pk->playerGamemode = TypeConverter::getInstance()->coreGameModeToProtocol($this->player->getGamemode());
 		$pk->playerPosition = $this->player->getOffsetPosition($location);
 		$pk->pitch = $location->pitch;
 		$pk->yaw = $location->yaw;
 		$pk->seed = -1;
 		$pk->dimension = DimensionIds::OVERWORLD; //TODO: implement this properly
-		$pk->worldGamemode = TypeConverter::getInstance()->getClientFriendlyGamemode($this->server->getGamemode());
+		$pk->worldGamemode = TypeConverter::getInstance()->coreGameModeToProtocol($this->server->getGamemode());
 		$pk->difficulty = $location->getWorldNonNull()->getDifficulty();
 		$pk->spawnX = $spawnPosition->getFloorX();
 		$pk->spawnY = $spawnPosition->getFloorY();
@@ -76,6 +77,9 @@ class PreSpawnPacketHandler extends PacketHandler{
 		$pk->rainLevel = 0; //TODO: implement these properly
 		$pk->lightningLevel = 0;
 		$pk->commandsEnabled = true;
+		$pk->gameRules = [
+			"naturalregeneration" => new BoolGameRule(false) //Hack for client side regeneration
+		];
 		$pk->levelId = "";
 		$pk->worldName = $this->server->getMotd();
 		$pk->blockTable = RuntimeBlockMapping::getInstance()->getStartGamePaletteCache();

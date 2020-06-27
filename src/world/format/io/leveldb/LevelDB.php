@@ -226,7 +226,8 @@ class LevelDB extends BaseWorldProvider implements WritableWorldProvider{
 	protected function readChunk(int $chunkX, int $chunkZ) : ?Chunk{
 		$index = LevelDB::chunkIndex($chunkX, $chunkZ);
 
-		if(!$this->chunkExists($chunkX, $chunkZ)){
+		$chunkVersionRaw = $this->db->get($index . self::TAG_VERSION);
+		if($chunkVersionRaw === false){
 			return null;
 		}
 
@@ -236,10 +237,8 @@ class LevelDB extends BaseWorldProvider implements WritableWorldProvider{
 		/** @var BiomeArray|null $biomeArray */
 		$biomeArray = null;
 
-		$chunkVersion = ord($this->db->get($index . self::TAG_VERSION));
+		$chunkVersion = ord($chunkVersionRaw);
 		$hasBeenUpgraded = $chunkVersion < self::CURRENT_LEVEL_CHUNK_VERSION;
-
-		$binaryStream = new BinaryStream();
 
 		switch($chunkVersion){
 			case 15: //MCPE 1.12.0.4 beta (???)
@@ -261,7 +260,7 @@ class LevelDB extends BaseWorldProvider implements WritableWorldProvider{
 						continue;
 					}
 
-					$binaryStream->setBuffer($data);
+					$binaryStream = new BinaryStream($data);
 					if($binaryStream->feof()){
 						throw new CorruptedChunkException("Unexpected empty data for subchunk $y");
 					}
@@ -323,7 +322,7 @@ class LevelDB extends BaseWorldProvider implements WritableWorldProvider{
 				}
 
 				if(($maps2d = $this->db->get($index . self::TAG_DATA_2D)) !== false){
-					$binaryStream->setBuffer($maps2d);
+					$binaryStream = new BinaryStream($maps2d);
 
 					try{
 						$binaryStream->get(512); //heightmap, discard it
@@ -342,7 +341,7 @@ class LevelDB extends BaseWorldProvider implements WritableWorldProvider{
 				if($legacyTerrain === false){
 					throw new CorruptedChunkException("Missing expected LEGACY_TERRAIN tag for format version $chunkVersion");
 				}
-				$binaryStream->setBuffer($legacyTerrain);
+				$binaryStream = new BinaryStream($legacyTerrain);
 				try{
 					$fullIds = $binaryStream->get(32768);
 					$fullData = $binaryStream->get(16384);

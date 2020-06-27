@@ -28,9 +28,12 @@ use Mdanter\Ecc\Crypto\Key\PublicKeyInterface;
 use Mdanter\Ecc\Serializer\PublicKey\DerPublicKeySerializer;
 use pocketmine\network\mcpe\JwtException;
 use pocketmine\network\mcpe\JwtUtils;
-use pocketmine\network\mcpe\protocol\LoginPacket;
+use pocketmine\network\mcpe\protocol\types\login\JwtChainLinkBody;
+use pocketmine\network\mcpe\protocol\types\login\JwtHeader;
 use pocketmine\scheduler\AsyncTask;
 use function base64_decode;
+use function igbinary_serialize;
+use function igbinary_unserialize;
 use function time;
 
 class ProcessLoginTask extends AsyncTask{
@@ -40,8 +43,10 @@ class ProcessLoginTask extends AsyncTask{
 
 	private const CLOCK_DRIFT_MAX = 60;
 
-	/** @var LoginPacket */
-	private $packet;
+	/** @var string */
+	private $chain;
+	/** @var string */
+	private $clientDataJwt;
 
 	/**
 	 * @var string|null
@@ -63,11 +68,13 @@ class ProcessLoginTask extends AsyncTask{
 	private $clientPublicKey = null;
 
 	/**
+	 * @param string[] $chainJwts
 	 * @phpstan-var \Closure(bool $isAuthenticated, bool $authRequired, ?string $error, ?PublicKeyInterface $clientPublicKey) : void $onCompletion
 	 */
-	public function __construct(LoginPacket $packet, bool $authRequired, \Closure $onCompletion){
+	public function __construct(array $chainJwts, string $clientDataJwt, bool $authRequired, \Closure $onCompletion){
 		$this->storeLocal(self::TLS_KEY_ON_COMPLETION, $onCompletion);
-		$this->packet = $packet;
+		$this->chain = igbinary_serialize($chainJwts);
+		$this->clientDataJwt = $clientDataJwt;
 		$this->authRequired = $authRequired;
 	}
 
@@ -81,12 +88,13 @@ class ProcessLoginTask extends AsyncTask{
 	}
 
 	private function validateChain() : PublicKeyInterface{
-		$packet = $this->packet;
+		/** @var string[] $chain */
+		$chain = igbinary_unserialize($this->chain);
 
 		$currentKey = null;
 		$first = true;
 
-		foreach($packet->chainDataJwt->chain as $jwt){
+		foreach($chain as $jwt){
 			$this->validateToken($jwt, $currentKey, $first);
 			if($first){
 				$first = false;
@@ -96,7 +104,7 @@ class ProcessLoginTask extends AsyncTask{
 		/** @var string $clientKey */
 		$clientKey = $currentKey;
 
-		$this->validateToken($packet->clientDataJwt, $currentKey);
+		$this->validateToken($this->clientDataJwt, $currentKey);
 
 		return (new DerPublicKeySerializer())->parse(base64_decode($clientKey, true));
 	}
@@ -106,9 +114,21 @@ class ProcessLoginTask extends AsyncTask{
 	 */
 	private function validateToken(string $jwt, ?string &$currentPublicKey, bool $first = false) : void{
 		try{
-			[$headers, $claims, ] = JwtUtils::parse($jwt);
+			[$headersArray, $claimsArray, ] = JwtUtils::parse($jwt);
 		}catch(JwtException $e){
 			throw new VerifyLoginException("Failed to parse JWT: " . $e->getMessage(), 0, $e);
+		}
+
+		$mapper = new \JsonMapper();
+		$mapper->bExceptionOnMissingData = true;
+		$mapper->bExceptionOnUndefinedProperty = true;
+		$mapper->bEnforceMapType = false;
+
+		try{
+			/** @var JwtHeader $headers */
+			$headers = $mapper->map($headersArray, new JwtHeader());
+		}catch(\JsonMapper_Exception $e){
+			throw new VerifyLoginException("Invalid JWT header: " . $e->getMessage(), 0, $e);
 		}
 
 		if($currentPublicKey === null){
@@ -117,7 +137,10 @@ class ProcessLoginTask extends AsyncTask{
 			}
 
 			//First link, check that it is self-signed
-			$currentPublicKey = $headers["x5u"];
+			$currentPublicKey = $headers->x5u;
+		}elseif($headers->x5u !== $currentPublicKey){
+			//Fast path: if the header key doesn't match what we expected, the signature isn't going to validate anyway
+			throw new VerifyLoginException("%pocketmine.disconnect.invalidSession.badSignature");
 		}
 
 		$derPublicKeySerializer = new DerPublicKeySerializer();
@@ -143,16 +166,28 @@ class ProcessLoginTask extends AsyncTask{
 			$this->authenticated = true; //we're signed into xbox live
 		}
 
+		$mapper = new \JsonMapper();
+		$mapper->bExceptionOnUndefinedProperty = false; //we only care about the properties we're using in this case
+		$mapper->bExceptionOnMissingData = true;
+		$mapper->bEnforceMapType = false;
+		$mapper->bRemoveUndefinedAttributes = true;
+		try{
+			/** @var JwtChainLinkBody $claims */
+			$claims = $mapper->map($claimsArray, new JwtChainLinkBody());
+		}catch(\JsonMapper_Exception $e){
+			throw new VerifyLoginException("Invalid chain link body: " . $e->getMessage(), 0, $e);
+		}
+
 		$time = time();
-		if(isset($claims["nbf"]) and $claims["nbf"] > $time + self::CLOCK_DRIFT_MAX){
+		if(isset($claims->nbf) and $claims->nbf > $time + self::CLOCK_DRIFT_MAX){
 			throw new VerifyLoginException("%pocketmine.disconnect.invalidSession.tooEarly");
 		}
 
-		if(isset($claims["exp"]) and $claims["exp"] < $time - self::CLOCK_DRIFT_MAX){
+		if(isset($claims->exp) and $claims->exp < $time - self::CLOCK_DRIFT_MAX){
 			throw new VerifyLoginException("%pocketmine.disconnect.invalidSession.tooLate");
 		}
 
-		$currentPublicKey = $claims["identityPublicKey"] ?? null; //if there are further links, the next link should be signed with this
+		$currentPublicKey = $claims->identityPublicKey ?? null; //if there are further links, the next link should be signed with this
 	}
 
 	public function onCompletion() : void{

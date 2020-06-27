@@ -23,24 +23,32 @@ declare(strict_types=1);
 
 namespace pocketmine\item;
 
+use pocketmine\entity\Location;
 use pocketmine\entity\projectile\SplashPotion as SplashPotionEntity;
-use pocketmine\nbt\tag\CompoundTag;
+use pocketmine\entity\projectile\Throwable;
+use pocketmine\player\Player;
 
 class SplashPotion extends ProjectileItem{
+
+	/** @var int */
+	private $potionId;
+
+	public function __construct(int $id, int $variant, string $name, int $potionId){
+		parent::__construct($id, $variant, $name);
+		$this->potionId = $potionId;
+	}
 
 	public function getMaxStackSize() : int{
 		return 1;
 	}
 
-	public function getProjectileEntityClass() : string{
-		return SplashPotionEntity::class;
+	protected function createEntity(Location $location, Player $thrower) : Throwable{
+		$projectile = new SplashPotionEntity($location, $thrower);
+		$projectile->setPotionId($this->potionId);
+		return $projectile;
 	}
 
 	public function getThrowForce() : float{
 		return 0.5;
-	}
-
-	protected function addExtraTags(CompoundTag $tag) : void{
-		$tag->setShort("PotionId", $this->meta);
 	}
 }

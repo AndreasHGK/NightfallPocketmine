@@ -24,6 +24,7 @@ declare(strict_types=1);
 namespace pocketmine\network\mcpe\handler;
 
 use Mdanter\Ecc\Crypto\Key\PublicKeyInterface;
+use pocketmine\entity\InvalidSkinException;
 use pocketmine\event\player\PlayerPreLoginEvent;
 use pocketmine\network\BadPacketException;
 use pocketmine\network\mcpe\auth\ProcessLoginTask;
@@ -36,20 +37,12 @@ use pocketmine\network\mcpe\protocol\PlayStatusPacket;
 use pocketmine\network\mcpe\protocol\ProtocolInfo;
 use pocketmine\network\mcpe\protocol\types\login\AuthenticationData;
 use pocketmine\network\mcpe\protocol\types\login\ClientData;
-use pocketmine\network\mcpe\protocol\types\login\ClientDataPersonaPieceTintColor;
-use pocketmine\network\mcpe\protocol\types\login\ClientDataPersonaSkinPiece;
+use pocketmine\network\mcpe\protocol\types\login\ClientDataToSkinDataHelper;
 use pocketmine\network\mcpe\protocol\types\login\JwtChain;
-use pocketmine\network\mcpe\protocol\types\PersonaPieceTintColor;
-use pocketmine\network\mcpe\protocol\types\PersonaSkinPiece;
-use pocketmine\network\mcpe\protocol\types\SkinAnimation;
-use pocketmine\network\mcpe\protocol\types\SkinData;
-use pocketmine\network\mcpe\protocol\types\SkinImage;
 use pocketmine\player\Player;
 use pocketmine\player\PlayerInfo;
 use pocketmine\Server;
 use pocketmine\uuid\UUID;
-use function array_map;
-use function base64_decode;
 use function is_array;
 
 /**
@@ -109,52 +102,9 @@ class LoginPacketHandler extends PacketHandler{
 		}
 
 		$clientData = $this->parseClientData($packet->clientDataJwt);
-		$safeB64Decode = static function(string $base64, string $context) : string{
-			$result = base64_decode($base64, true);
-			if($result === false){
-				throw new \InvalidArgumentException("$context: Malformed base64, cannot be decoded");
-			}
-			return $result;
-		};
 		try{
-			/** @var SkinAnimation[] $animations */
-			$animations = [];
-			foreach($clientData->AnimatedImageData as $k => $animation){
-				$animations[] = new SkinAnimation(
-					new SkinImage(
-						$animation->ImageHeight,
-						$animation->ImageWidth,
-						$safeB64Decode($animation->Image, "AnimatedImageData.$k.Image")
-					),
-					$animation->Type,
-					$animation->Frames
-				);
-			}
-			$skinData = new SkinData(
-				$clientData->SkinId,
-				$safeB64Decode($clientData->SkinResourcePatch, "SkinResourcePatch"),
-				new SkinImage($clientData->SkinImageHeight, $clientData->SkinImageWidth, $safeB64Decode($clientData->SkinData, "SkinData")),
-				$animations,
-				new SkinImage($clientData->CapeImageHeight, $clientData->CapeImageWidth, $safeB64Decode($clientData->CapeData, "CapeData")),
-				$safeB64Decode($clientData->SkinGeometryData, "SkinGeometryData"),
-				$safeB64Decode($clientData->SkinAnimationData, "SkinAnimationData"),
-				$clientData->PremiumSkin,
-				$clientData->PersonaSkin,
-				$clientData->CapeOnClassicSkin,
-				$clientData->CapeId,
-				null,
-				$clientData->ArmSize,
-				$clientData->SkinColor,
-				array_map(function(ClientDataPersonaSkinPiece $piece) : PersonaSkinPiece{
-					return new PersonaSkinPiece($piece->PieceId, $piece->PieceType, $piece->PackId, $piece->IsDefault, $piece->ProductId);
-				}, $clientData->PersonaPieces),
-				array_map(function(ClientDataPersonaPieceTintColor $tint) : PersonaPieceTintColor{
-					return new PersonaPieceTintColor($tint->PieceType, $tint->Colors);
-				}, $clientData->PieceTintColors)
-			);
-
-			$skin = SkinAdapterSingleton::get()->fromSkinData($skinData);
-		}catch(\InvalidArgumentException $e){
+			$skin = SkinAdapterSingleton::get()->fromSkinData(ClientDataToSkinDataHelper::getInstance()->fromClientData($clientData));
+		}catch(\InvalidArgumentException | InvalidSkinException $e){
 			$this->session->getLogger()->debug("Invalid skin: " . $e->getMessage());
 			$this->session->disconnect("disconnectionScreen.invalidSkin");
 
@@ -166,17 +116,18 @@ class LoginPacketHandler extends PacketHandler{
 		}catch(\InvalidArgumentException $e){
 			throw BadPacketException::wrap($e, "Failed to parse login UUID");
 		}
-		($this->playerInfoConsumer)(new PlayerInfo(
+		$playerInfo = new PlayerInfo(
 			$extraData->displayName,
 			$uuid,
 			$skin,
 			$clientData->LanguageCode,
 			$extraData->XUID,
 			(array) $clientData
-		));
+		);
+		($this->playerInfoConsumer)($playerInfo);
 
 		$ev = new PlayerPreLoginEvent(
-			$this->session->getPlayerInfo(),
+			$playerInfo,
 			$this->session->getIp(),
 			$this->session->getPort(),
 			$this->server->requiresAuthentication()
@@ -184,10 +135,10 @@ class LoginPacketHandler extends PacketHandler{
 		if($this->server->getNetwork()->getConnectionCount() > $this->server->getMaxPlayers()){
 			$ev->setKickReason(PlayerPreLoginEvent::KICK_REASON_SERVER_FULL, "disconnectionScreen.serverFull");
 		}
-		if(!$this->server->isWhitelisted($this->session->getPlayerInfo()->getUsername())){
+		if(!$this->server->isWhitelisted($playerInfo->getUsername())){
 			$ev->setKickReason(PlayerPreLoginEvent::KICK_REASON_SERVER_WHITELISTED, "Server is whitelisted");
 		}
-		if($this->server->getNameBans()->isBanned($this->session->getPlayerInfo()->getUsername()) or $this->server->getIPBans()->isBanned($this->session->getIp())){
+		if($this->server->getNameBans()->isBanned($playerInfo->getUsername()) or $this->server->getIPBans()->isBanned($this->session->getIp())){
 			$ev->setKickReason(PlayerPreLoginEvent::KICK_REASON_BANNED, "You are banned");
 		}
 
@@ -229,7 +180,7 @@ class LoginPacketHandler extends PacketHandler{
 				$mapper->bExceptionOnUndefinedProperty = true;
 				try{
 					/** @var AuthenticationData $extraData */
-					$extraData = $mapper->map($claims['extraData'], new AuthenticationData);
+					$extraData = $mapper->map($claims["extraData"], new AuthenticationData);
 				}catch(\JsonMapper_Exception $e){
 					throw BadPacketException::wrap($e);
 				}
@@ -270,7 +221,7 @@ class LoginPacketHandler extends PacketHandler{
 	 * @throws \InvalidArgumentException
 	 */
 	protected function processLogin(LoginPacket $packet, bool $authRequired) : void{
-		$this->server->getAsyncPool()->submitTask(new ProcessLoginTask($packet, $authRequired, $this->authCallback));
+		$this->server->getAsyncPool()->submitTask(new ProcessLoginTask($packet->chainDataJwt->chain, $packet->clientDataJwt, $authRequired, $this->authCallback));
 		$this->session->setHandler(null); //drop packets received during login verification
 	}
 

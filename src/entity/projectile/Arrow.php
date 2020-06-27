@@ -26,23 +26,23 @@ namespace pocketmine\entity\projectile;
 use pocketmine\block\Block;
 use pocketmine\entity\animation\ArrowShakeAnimation;
 use pocketmine\entity\Entity;
+use pocketmine\entity\Location;
 use pocketmine\event\entity\ProjectileHitEvent;
 use pocketmine\event\inventory\InventoryPickupArrowEvent;
 use pocketmine\item\VanillaItems;
 use pocketmine\math\RayTraceResult;
 use pocketmine\nbt\tag\CompoundTag;
-use pocketmine\network\mcpe\protocol\types\entity\EntityLegacyIds;
+use pocketmine\network\mcpe\protocol\types\entity\EntityIds;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataCollection;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataFlags;
 use pocketmine\player\Player;
 use pocketmine\world\sound\ArrowHitSound;
-use pocketmine\world\World;
 use function mt_rand;
 use function sqrt;
 
 class Arrow extends Projectile{
 
-	public static function getNetworkTypeId() : int{ return EntityLegacyIds::ARROW;	}
+	public static function getNetworkTypeId() : string{ return EntityIds::ARROW; }
 
 	public const PICKUP_NONE = 0;
 	public const PICKUP_ANY = 1;
@@ -71,8 +71,8 @@ class Arrow extends Projectile{
 	/** @var bool */
 	protected $critical = false;
 
-	public function __construct(World $world, CompoundTag $nbt, ?Entity $shootingEntity = null, bool $critical = false){
-		parent::__construct($world, $nbt, $shootingEntity);
+	public function __construct(Location $location, ?Entity $shootingEntity, bool $critical, ?CompoundTag $nbt = null){
+		parent::__construct($location, $shootingEntity, $nbt);
 		$this->setCritical($critical);
 	}
 

@@ -25,12 +25,12 @@ namespace pocketmine\network\mcpe\protocol\serializer;
 
 #include <rules/DataPacket.h>
 
-use pocketmine\item\ItemIds;
 use pocketmine\math\Vector3;
 use pocketmine\nbt\NbtDataException;
 use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\nbt\TreeRoot;
 use pocketmine\network\mcpe\protocol\PacketDecodeException;
+use pocketmine\network\mcpe\protocol\types\BoolGameRule;
 use pocketmine\network\mcpe\protocol\types\command\CommandOriginData;
 use pocketmine\network\mcpe\protocol\types\entity\Attribute;
 use pocketmine\network\mcpe\protocol\types\entity\BlockPosMetadataProperty;
@@ -44,7 +44,11 @@ use pocketmine\network\mcpe\protocol\types\entity\MetadataProperty;
 use pocketmine\network\mcpe\protocol\types\entity\ShortMetadataProperty;
 use pocketmine\network\mcpe\protocol\types\entity\StringMetadataProperty;
 use pocketmine\network\mcpe\protocol\types\entity\Vec3MetadataProperty;
+use pocketmine\network\mcpe\protocol\types\FixedItemIds;
+use pocketmine\network\mcpe\protocol\types\FloatGameRule;
+use pocketmine\network\mcpe\protocol\types\GameRule;
 use pocketmine\network\mcpe\protocol\types\GameRuleType;
+use pocketmine\network\mcpe\protocol\types\IntGameRule;
 use pocketmine\network\mcpe\protocol\types\inventory\ItemStack;
 use pocketmine\network\mcpe\protocol\types\PersonaPieceTintColor;
 use pocketmine\network\mcpe\protocol\types\PersonaSkinPiece;
@@ -60,7 +64,7 @@ use pocketmine\uuid\UUID;
 use function count;
 use function strlen;
 
-class NetworkBinaryStream extends BinaryStream{
+class PacketSerializer extends BinaryStream{
 
 	/**
 	 * @throws BinaryDataException
@@ -101,11 +105,10 @@ class NetworkBinaryStream extends BinaryStream{
 		$animationCount = $this->getLInt();
 		$animations = [];
 		for($i = 0; $i < $animationCount; ++$i){
-			$animations[] = new SkinAnimation(
-				$skinImage = $this->getSkinImage(),
-				$animationType = $this->getLInt(),
-				$animationFrames = $this->getLFloat()
-			);
+			$skinImage = $this->getSkinImage();
+			$animationType = $this->getLInt();
+			$animationFrames = $this->getLFloat();
+			$animations[] = new SkinAnimation($skinImage, $animationType, $animationFrames);
 		}
 		$capeData = $this->getSkinImage();
 		$geometryData = $this->getString();
@@ -120,13 +123,12 @@ class NetworkBinaryStream extends BinaryStream{
 		$personaPieceCount = $this->getLInt();
 		$personaPieces = [];
 		for($i = 0; $i < $personaPieceCount; ++$i){
-			$personaPieces[] = new PersonaSkinPiece(
-				$pieceId = $this->getString(),
-				$pieceType = $this->getString(),
-				$packId = $this->getString(),
-				$isDefaultPiece = $this->getBool(),
-				$productId = $this->getString()
-			);
+			$pieceId = $this->getString();
+			$pieceType = $this->getString();
+			$packId = $this->getString();
+			$isDefaultPiece = $this->getBool();
+			$productId = $this->getString();
+			$personaPieces[] = new PersonaSkinPiece($pieceId, $pieceType, $packId, $isDefaultPiece, $productId);
 		}
 		$pieceTintColorCount = $this->getLInt();
 		$pieceTintColors = [];
@@ -146,7 +148,7 @@ class NetworkBinaryStream extends BinaryStream{
 		return new SkinData($skinId, $skinResourcePatch, $skinData, $animations, $capeData, $geometryData, $animationData, $premium, $persona, $capeOnClassic, $capeId, $fullSkinId, $armSize, $skinColor, $personaPieces, $pieceTintColors);
 	}
 
-	public function putSkin(SkinData $skin): void{
+	public function putSkin(SkinData $skin) : void{
 		$this->putString($skin->getSkinId());
 		$this->putString($skin->getResourcePatch());
 		$this->putSkinImage($skin->getSkinImage());
@@ -240,7 +242,7 @@ class NetworkBinaryStream extends BinaryStream{
 		}
 
 		$shieldBlockingTick = null;
-		if($id === ItemIds::SHIELD){
+		if($id === FixedItemIds::SHIELD){
 			$shieldBlockingTick = $this->getVarLong();
 		}
 
@@ -327,15 +329,24 @@ class NetworkBinaryStream extends BinaryStream{
 
 	private function readMetadataProperty(int $type) : MetadataProperty{
 		switch($type){
-			case ByteMetadataProperty::id(): return ByteMetadataProperty::read($this);
-			case ShortMetadataProperty::id(): return ShortMetadataProperty::read($this);
-			case IntMetadataProperty::id(): return IntMetadataProperty::read($this);
-			case FloatMetadataProperty::id(): return FloatMetadataProperty::read($this);
-			case StringMetadataProperty::id(): return StringMetadataProperty::read($this);
-			case CompoundTagMetadataProperty::id(): return CompoundTagMetadataProperty::read($this);
-			case BlockPosMetadataProperty::id(): return BlockPosMetadataProperty::read($this);
-			case LongMetadataProperty::id(): return LongMetadataProperty::read($this);
-			case Vec3MetadataProperty::id(): return Vec3MetadataProperty::read($this);
+			case ByteMetadataProperty::id():
+				return ByteMetadataProperty::read($this);
+			case ShortMetadataProperty::id():
+				return ShortMetadataProperty::read($this);
+			case IntMetadataProperty::id():
+				return IntMetadataProperty::read($this);
+			case FloatMetadataProperty::id():
+				return FloatMetadataProperty::read($this);
+			case StringMetadataProperty::id():
+				return StringMetadataProperty::read($this);
+			case CompoundTagMetadataProperty::id():
+				return CompoundTagMetadataProperty::read($this);
+			case BlockPosMetadataProperty::id():
+				return BlockPosMetadataProperty::read($this);
+			case LongMetadataProperty::id():
+				return LongMetadataProperty::read($this);
+			case Vec3MetadataProperty::id():
+				return Vec3MetadataProperty::read($this);
 			default:
 				throw new PacketDecodeException("Unknown entity metadata type " . $type);
 		}
@@ -345,6 +356,7 @@ class NetworkBinaryStream extends BinaryStream{
 	 * Writes entity metadata to the packet buffer.
 	 *
 	 * @param MetadataProperty[] $metadata
+	 *
 	 * @phpstan-param array<int, MetadataProperty> $metadata
 	 */
 	public function putEntityMetadata(array $metadata) : void{
@@ -481,11 +493,10 @@ class NetworkBinaryStream extends BinaryStream{
 	 * @throws BinaryDataException
 	 */
 	public function getVector3() : Vector3{
-		return new Vector3(
-			$this->getLFloat(),
-			$this->getLFloat(),
-			$this->getLFloat()
-		);
+		$x = $this->getLFloat();
+		$y = $this->getLFloat();
+		$z = $this->getLFloat();
+		return new Vector3($x, $y, $z);
 	}
 
 	/**
@@ -494,7 +505,7 @@ class NetworkBinaryStream extends BinaryStream{
 	 * Note: ONLY use this where it is reasonable to allow not specifying the vector.
 	 * For all other purposes, use the non-nullable version.
 	 *
-	 * @see NetworkBinaryStream::putVector3()
+	 * @see PacketSerializer::putVector3()
 	 */
 	public function putVector3Nullable(?Vector3 $vector) : void{
 		if($vector !== null){
@@ -526,12 +537,21 @@ class NetworkBinaryStream extends BinaryStream{
 		$this->putByte((int) ($rotation / (360 / 256)));
 	}
 
+	private function readGameRule(int $type) : GameRule{
+		switch($type){
+			case GameRuleType::BOOL: return BoolGameRule::decode($this);
+			case GameRuleType::INT: return IntGameRule::decode($this);
+			case GameRuleType::FLOAT: return FloatGameRule::decode($this);
+			default:
+				throw new PacketDecodeException("Unknown gamerule type $type");
+		}
+	}
+
 	/**
 	 * Reads gamerules
-	 * TODO: implement this properly
 	 *
-	 * @return mixed[][], members are in the structure [name => [type, value]]
-	 * @phpstan-return array<string, array{0: int, 1: bool|int|float}>
+	 * @return GameRule[] game rule name => value
+	 * @phpstan-return array<string, GameRule>
 	 *
 	 * @throws PacketDecodeException
 	 * @throws BinaryDataException
@@ -542,52 +562,24 @@ class NetworkBinaryStream extends BinaryStream{
 		for($i = 0; $i < $count; ++$i){
 			$name = $this->getString();
 			$type = $this->getUnsignedVarInt();
-			$value = null;
-			switch($type){
-				case GameRuleType::BOOL:
-					$value = $this->getBool();
-					break;
-				case GameRuleType::INT:
-					$value = $this->getUnsignedVarInt();
-					break;
-				case GameRuleType::FLOAT:
-					$value = $this->getLFloat();
-					break;
-				default:
-					throw new PacketDecodeException("Unknown gamerule type $type");
-			}
-
-			$rules[$name] = [$type, $value];
+			$rules[$name] = $this->readGameRule($type);
 		}
 
 		return $rules;
 	}
 
 	/**
-	 * Writes a gamerule array, members should be in the structure [name => [type, value]]
-	 * TODO: implement this properly
+	 * Writes a gamerule array
 	 *
-	 * @param mixed[][] $rules
-	 * @phpstan-param array<string, array{0: int, 1: bool|int|float}> $rules
+	 * @param GameRule[] $rules
+	 * @phpstan-param array<string, GameRule> $rules
 	 */
 	public function putGameRules(array $rules) : void{
 		$this->putUnsignedVarInt(count($rules));
 		foreach($rules as $name => $rule){
 			$this->putString($name);
-			$this->putUnsignedVarInt($rule[0]);
-			switch($rule[0]){
-				case GameRuleType::BOOL:
-					$this->putBool($rule[1]);
-					break;
-				case GameRuleType::INT:
-					$this->putUnsignedVarInt($rule[1]);
-					break;
-				case GameRuleType::FLOAT:
-					$this->putLFloat($rule[1]);
-					break;
-				default:
-					throw new \InvalidArgumentException("Invalid gamerule type " . $rule[0]);
-			}
+			$this->putUnsignedVarInt($rule->getType());
+			$rule->encode($this);
 		}
 	}
 
@@ -595,14 +587,11 @@ class NetworkBinaryStream extends BinaryStream{
 	 * @throws BinaryDataException
 	 */
 	public function getEntityLink() : EntityLink{
-		$link = new EntityLink();
-
-		$link->fromEntityUniqueId = $this->getEntityUniqueId();
-		$link->toEntityUniqueId = $this->getEntityUniqueId();
-		$link->type = $this->getByte();
-		$link->immediate = $this->getBool();
-
-		return $link;
+		$fromEntityUniqueId = $this->getEntityUniqueId();
+		$toEntityUniqueId = $this->getEntityUniqueId();
+		$type = $this->getByte();
+		$immediate = $this->getBool();
+		return new EntityLink($fromEntityUniqueId, $toEntityUniqueId, $type, $immediate);
 	}
 
 	public function putEntityLink(EntityLink $link) : void{

@@ -34,7 +34,7 @@ use pocketmine\entity\animation\ArmSwingAnimation;
 use pocketmine\entity\animation\CriticalHitAnimation;
 use pocketmine\entity\effect\VanillaEffects;
 use pocketmine\entity\Entity;
-use pocketmine\entity\EntityFactory;
+use pocketmine\entity\EntityDataHelper;
 use pocketmine\entity\Human;
 use pocketmine\entity\Living;
 use pocketmine\entity\Location;
@@ -78,6 +78,7 @@ use pocketmine\item\enchantment\EnchantmentInstance;
 use pocketmine\item\enchantment\MeleeWeaponEnchantment;
 use pocketmine\item\Item;
 use pocketmine\item\ItemUseResult;
+use pocketmine\lang\Language;
 use pocketmine\lang\TranslationContainer;
 use pocketmine\math\Vector3;
 use pocketmine\nbt\tag\CompoundTag;
@@ -267,7 +268,6 @@ class Player extends Human implements CommandSender, ChunkLoader, ChunkListener,
 		$this->networkSession = $session;
 		$this->playerInfo = $playerInfo;
 		$this->authenticated = $authenticated;
-		$this->skin = $this->playerInfo->getSkin();
 
 		$this->username = $username;
 		$this->displayName = $this->username;
@@ -282,16 +282,13 @@ class Player extends Human implements CommandSender, ChunkLoader, ChunkListener,
 
 		$namedtag = $this->server->getOfflinePlayerData($this->username); //TODO: make this async
 
-		$spawnReset = false;
-
 		if($namedtag !== null and ($world = $this->server->getWorldManager()->getWorldByName($namedtag->getString("Level", ""))) !== null){
-			/** @var float[] $pos */
-			$pos = $namedtag->getListTag("Pos")->getAllValues();
-			$spawn = new Vector3($pos[0], $pos[1], $pos[2]);
+			$spawn = EntityDataHelper::parseLocation($namedtag, $world);
+			$onGround = $namedtag->getByte("OnGround", 1) === 1;
 		}else{
-			$world = $this->server->getWorldManager()->getDefaultWorld(); //TODO: default world might be null
-			$spawn = $world->getSafeSpawn();
-			$spawnReset = true;
+			$world = $this->server->getWorldManager()->getDefaultWorld();
+			$spawn = Location::fromObject($world->getSafeSpawn(), $world);
+			$onGround = true;
 		}
 
 		//load the spawn chunk so we can see the terrain
@@ -299,21 +296,8 @@ class Player extends Human implements CommandSender, ChunkLoader, ChunkListener,
 		$world->registerChunkListener($this, $spawn->getFloorX() >> 4, $spawn->getFloorZ() >> 4);
 		$this->usedChunks[World::chunkHash($spawn->getFloorX() >> 4, $spawn->getFloorZ() >> 4)] = UsedChunkStatus::NEEDED();
 
-		if($namedtag === null){
-			$namedtag = EntityFactory::createBaseNBT($spawn);
-
-			$namedtag->setByte("OnGround", 1); //TODO: this hack is needed for new players in-air ticks - they don't get detected as on-ground until they move
-			//TODO: old code had a TODO for SpawnForced
-
-		}elseif($spawnReset){
-			$namedtag->setTag("Pos", new ListTag([
-				new DoubleTag($spawn->x),
-				new DoubleTag($spawn->y),
-				new DoubleTag($spawn->z)
-			]));
-		}
-
-		parent::__construct($world, $namedtag);
+		parent::__construct($spawn, $this->playerInfo->getSkin(), $namedtag);
+		$this->onGround = $onGround; //TODO: this hack is needed for new players in-air ticks - they don't get detected as on-ground until they move
 
 		$ev = new PlayerLoginEvent($this, "Plugin reason");
 		$ev->call();
@@ -649,6 +633,10 @@ class Player extends Human implements CommandSender, ChunkLoader, ChunkListener,
 	 */
 	public function getLocale() : string{
 		return $this->locale;
+	}
+
+	public function getLanguage() : Language{
+		return $this->server->getLanguage();
 	}
 
 	/**
@@ -1876,7 +1864,7 @@ class Player extends Human implements CommandSender, ChunkLoader, ChunkListener,
 			return;
 		}
 
-		$this->networkSession->onRawChatMessage($this->server->getLanguage()->translateString($message));
+		$this->networkSession->onRawChatMessage($this->getLanguage()->translateString($message));
 	}
 
 	/**
@@ -1885,11 +1873,11 @@ class Player extends Human implements CommandSender, ChunkLoader, ChunkListener,
 	public function sendTranslation(string $message, array $parameters = []) : void{
 		if(!$this->server->isLanguageForced()){
 			foreach($parameters as $i => $p){
-				$parameters[$i] = $this->server->getLanguage()->translateString($p, [], "pocketmine.");
+				$parameters[$i] = $this->getLanguage()->translateString($p, [], "pocketmine.");
 			}
-			$this->networkSession->onTranslatedChatMessage($this->server->getLanguage()->translateString($message, $parameters, "pocketmine."), $parameters);
+			$this->networkSession->onTranslatedChatMessage($this->getLanguage()->translateString($message, $parameters, "pocketmine."), $parameters);
 		}else{
-			$this->sendMessage($this->server->getLanguage()->translateString($message, $parameters));
+			$this->sendMessage($this->getLanguage()->translateString($message, $parameters));
 		}
 	}
 

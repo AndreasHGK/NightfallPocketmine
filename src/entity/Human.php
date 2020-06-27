@@ -48,6 +48,7 @@ use pocketmine\network\mcpe\protocol\AddPlayerPacket;
 use pocketmine\network\mcpe\protocol\MovePlayerPacket;
 use pocketmine\network\mcpe\protocol\PlayerListPacket;
 use pocketmine\network\mcpe\protocol\PlayerSkinPacket;
+use pocketmine\network\mcpe\protocol\types\entity\EntityIds;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataProperties;
 use pocketmine\network\mcpe\protocol\types\entity\StringMetadataProperty;
 use pocketmine\network\mcpe\protocol\types\PlayerListEntry;
@@ -55,20 +56,15 @@ use pocketmine\player\Player;
 use pocketmine\utils\Limits;
 use pocketmine\uuid\UUID;
 use pocketmine\world\sound\TotemUseSound;
-use pocketmine\world\World;
 use function array_filter;
 use function array_merge;
 use function array_values;
-use function in_array;
 use function min;
 use function random_int;
-use function strlen;
 
 class Human extends Living implements ProjectileSource, InventoryHolder{
 
-	public static function getNetworkTypeId() : int{
-		return -1; //TODO: ideally we shouldn't have to specify this at all here ...
-	}
+	public static function getNetworkTypeId() : string{ return EntityIds::PLAYER; }
 
 	/** @var PlayerInventory */
 	protected $inventory;
@@ -96,31 +92,27 @@ class Human extends Living implements ProjectileSource, InventoryHolder{
 
 	protected $baseOffset = 1.62;
 
-	public function __construct(World $world, CompoundTag $nbt){
-		if($this->skin === null){
-			$skinTag = $nbt->getCompoundTag("Skin");
-			if($skinTag === null){
-				throw new \InvalidStateException((new \ReflectionClass($this))->getShortName() . " must have a valid skin set");
-			}
-			$this->skin = new Skin( //this throws if the skin is invalid
-				$skinTag->getString("Name"),
-				$skinTag->hasTag("Data", StringTag::class) ? $skinTag->getString("Data") : $skinTag->getByteArray("Data"), //old data (this used to be saved as a StringTag in older versions of PM)
-				$skinTag->getByteArray("CapeData", ""),
-				$skinTag->getString("GeometryName", ""),
-				$skinTag->getByteArray("GeometryData", "")
-			);
-		}
-
-		parent::__construct($world, $nbt);
+	public function __construct(Location $location, Skin $skin, ?CompoundTag $nbt = null){
+		$this->skin = $skin;
+		parent::__construct($location, $nbt);
 	}
 
 	/**
-	 * @deprecated
-	 *
-	 * Checks the length of a supplied skin bitmap and returns whether the length is valid.
+	 * @throws InvalidSkinException
+	 * @throws \UnexpectedValueException
 	 */
-	public static function isValidSkin(string $skin) : bool{
-		return in_array(strlen($skin), Skin::ACCEPTED_SKIN_SIZES, true);
+	public static function parseSkinNBT(CompoundTag $nbt) : Skin{
+		$skinTag = $nbt->getCompoundTag("Skin");
+		if($skinTag === null){
+			throw new \UnexpectedValueException("Missing skin data");
+		}
+		return new Skin( //this throws if the skin is invalid
+			$skinTag->getString("Name"),
+			$skinTag->hasTag("Data", StringTag::class) ? $skinTag->getString("Data") : $skinTag->getByteArray("Data"), //old data (this used to be saved as a StringTag in older versions of PM)
+			$skinTag->getByteArray("CapeData", ""),
+			$skinTag->getString("GeometryName", ""),
+			$skinTag->getByteArray("GeometryData", "")
+		);
 	}
 
 	public function getUniqueId() : UUID{

@@ -21,31 +21,17 @@
 
 declare(strict_types=1);
 
-namespace pocketmine\network\mcpe\protocol\types;
+namespace pocketmine\network\mcpe\protocol\types\login;
 
-class PotionTypeRecipe{
-	/** @var int */
-	private $inputPotionType;
-	/** @var int */
-	private $ingredientItemId;
-	/** @var int */
-	private $outputPotionType;
-
-	public function __construct(int $inputPotionType, int $ingredientItemId, int $outputPotionType){
-		$this->inputPotionType = $inputPotionType;
-		$this->ingredientItemId = $ingredientItemId;
-		$this->outputPotionType = $outputPotionType;
-	}
-
-	public function getInputPotionType() : int{
-		return $this->inputPotionType;
-	}
-
-	public function getIngredientItemId() : int{
-		return $this->ingredientItemId;
-	}
-
-	public function getOutputPotionType() : int{
-		return $this->outputPotionType;
-	}
+final class JwtHeader{
+	/**
+	 * @var string
+	 * @required
+	 */
+	public $alg;
+	/**
+	 * @var string
+	 * @required
+	 */
+	public $x5u;
 }

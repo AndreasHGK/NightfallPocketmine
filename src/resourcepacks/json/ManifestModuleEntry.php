@@ -21,31 +21,31 @@
 
 declare(strict_types=1);
 
-namespace pocketmine\network\mcpe\protocol\types;
+namespace pocketmine\resourcepacks\json;
 
-class PotionContainerChangeRecipe{
-	/** @var int */
-	private $inputItemId;
-	/** @var int */
-	private $ingredientItemId;
-	/** @var int */
-	private $outputItemId;
+final class ManifestModuleEntry{
 
-	public function __construct(int $inputItemId, int $ingredientItemId, int $outputItemId){
-		$this->inputItemId = $inputItemId;
-		$this->ingredientItemId = $ingredientItemId;
-		$this->outputItemId = $outputItemId;
-	}
+	/**
+	 * @var string
+	 */
+	public $description;
 
-	public function getInputItemId() : int{
-		return $this->inputItemId;
-	}
+	/**
+	 * @var string
+	 * @required
+	 */
+	public $type;
 
-	public function getIngredientItemId() : int{
-		return $this->ingredientItemId;
-	}
+	/**
+	 * @var string
+	 * @required
+	 */
+	public $uuid;
 
-	public function getOutputItemId() : int{
-		return $this->outputItemId;
-	}
+	/**
+	 * @var int[]
+	 * @phpstan-var array{int, int, int}
+	 * @required
+	 */
+	public $version;
 }

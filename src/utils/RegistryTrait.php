@@ -27,10 +27,10 @@ use function array_map;
 use function count;
 use function get_class;
 use function implode;
+use function mb_strtoupper;
 use function sprintf;
 use function strlen;
 use function strpos;
-use function strtoupper;
 use function substr;
 
 trait RegistryTrait{
@@ -43,11 +43,11 @@ trait RegistryTrait{
 	 * @throws \InvalidArgumentException
 	 */
 	private static function _registryRegister(string $name, object $member) : void{
-		$name = strtoupper($name);
+		$name = mb_strtoupper($name);
 		if(isset(self::$members[$name])){
 			throw new \InvalidArgumentException("\"$name\" is already reserved");
 		}
-		self::$members[strtoupper($name)] = $member;
+		self::$members[mb_strtoupper($name)] = $member;
 	}
 
 	/**
@@ -74,7 +74,7 @@ trait RegistryTrait{
 	 */
 	private static function _registryFromString(string $name) : object{
 		self::checkInit();
-		$name = strtoupper($name);
+		$name = mb_strtoupper($name);
 		if(!isset(self::$members[$name])){
 			throw new \InvalidArgumentException("No such registry member: " . self::class . "::" . $name);
 		}
@@ -124,7 +124,7 @@ public static function %1$s() : %2$s{
 	return self::fromString("%1$s");
 }';
 
-		foreach(self::getAll() as $name => $member){
+		foreach(self::_registryGetAll() as $name => $member){
 			$lines[] = sprintf($fnTmpl, $name, '\\' . get_class($member));
 		}
 		return "//region auto-generated code\n" . implode("\n", $lines) . "\n\n//endregion\n";
@@ -144,7 +144,7 @@ public static function %1$s() : %2$s{
 		static $lineTmpl = " * @method static %2\$s %s()";
 
 		$thisNamespace = (new \ReflectionClass(__CLASS__))->getNamespaceName();
-		foreach(self::getAll() as $name => $member){
+		foreach(self::_registryGetAll() as $name => $member){
 			$reflect = new \ReflectionClass($member);
 			while($reflect !== false and $reflect->isAnonymous()){
 				$reflect = $reflect->getParentClass();

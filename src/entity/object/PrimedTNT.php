@@ -28,7 +28,7 @@ use pocketmine\entity\Explosive;
 use pocketmine\event\entity\EntityDamageEvent;
 use pocketmine\event\entity\ExplosionPrimeEvent;
 use pocketmine\nbt\tag\CompoundTag;
-use pocketmine\network\mcpe\protocol\types\entity\EntityLegacyIds;
+use pocketmine\network\mcpe\protocol\types\entity\EntityIds;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataCollection;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataFlags;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataProperties;
@@ -38,7 +38,7 @@ use pocketmine\world\sound\IgniteSound;
 
 class PrimedTNT extends Entity implements Explosive{
 
-	public static function getNetworkTypeId() : int{ return EntityLegacyIds::TNT; }
+	public static function getNetworkTypeId() : string{ return EntityIds::TNT; }
 
 	public $width = 0.98;
 	public $height = 0.98;
@@ -52,6 +52,17 @@ class PrimedTNT extends Entity implements Explosive{
 	protected $fuse;
 
 	public $canCollide = false;
+
+	public function getFuse() : int{
+		return $this->fuse;
+	}
+
+	public function setFuse(int $fuse) : void{
+		if($fuse < 0 or $fuse > 32767){
+			throw new \InvalidArgumentException("Fuse must be in the range 0-32767");
+		}
+		$this->fuse = $fuse;
+	}
 
 	public function attack(EntityDamageEvent $source) : void{
 		if($source->getCause() === EntityDamageEvent::CAUSE_VOID){
