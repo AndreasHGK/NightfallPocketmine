@@ -44,9 +44,7 @@ trait ContainerTrait{
 	abstract public function getRealInventory();
 
 	protected function loadItems(CompoundTag $tag) : void{
-		if($tag->hasTag(Container::TAG_ITEMS, ListTag::class)){
-			$inventoryTag = $tag->getListTag(Container::TAG_ITEMS);
-
+		if(($inventoryTag = $tag->getTag(Container::TAG_ITEMS)) instanceof ListTag){
 			$inventory = $this->getRealInventory();
 			$listeners = $inventory->getListeners()->toArray();
 			$inventory->getListeners()->remove(...$listeners); //prevent any events being fired by initialization
@@ -58,8 +56,8 @@ trait ContainerTrait{
 			$inventory->getListeners()->add(...$listeners);
 		}
 
-		if($tag->hasTag(Container::TAG_LOCK, StringTag::class)){
-			$this->lock = $tag->getString(Container::TAG_LOCK);
+		if(($lockTag = $tag->getTag(Container::TAG_LOCK)) instanceof StringTag){
+			$this->lock = $lockTag->getValue();
 		}
 	}
 
@@ -96,7 +94,7 @@ trait ContainerTrait{
 		$pos = $this->getPos();
 
 		foreach($inv->getContents() as $k => $item){
-			$pos->getWorldNonNull()->dropItem($pos->add(0.5, 0.5, 0.5), $item);
+			$pos->getWorld()->dropItem($pos->add(0.5, 0.5, 0.5), $item);
 		}
 		$inv->clearAll();
 	}

@@ -99,7 +99,6 @@ use pocketmine\player\Player;
 use pocketmine\player\PlayerInfo;
 use pocketmine\Server;
 use pocketmine\timings\Timings;
-use pocketmine\utils\BinaryDataException;
 use pocketmine\utils\TextFormat;
 use pocketmine\utils\Utils;
 use pocketmine\world\Position;
@@ -226,11 +225,15 @@ class NetworkSession{
 		$ev->call();
 		$class = $ev->getPlayerClass();
 
+		//TODO: make this async
+		//TODO: this really has no business being in NetworkSession at all - what about allowing it to be provided by PlayerCreationEvent?
+		$namedtag = $this->server->getOfflinePlayerData($this->info->getUsername());
+
 		/**
 		 * @var Player $player
 		 * @see Player::__construct()
 		 */
-		$this->player = new $class($this->server, $this, $this->info, $this->authenticated);
+		$this->player = new $class($this->server, $this, $this->info, $this->authenticated, $namedtag);
 
 		$this->invManager = new InventoryManager($this->player, $this);
 
@@ -329,24 +332,18 @@ class NetworkSession{
 			Timings::$playerNetworkReceiveDecompressTimer->stopTiming();
 		}
 
-		$count = 0;
-		while(!$stream->feof() and $this->connected){
-			if($count++ >= 500){
-				throw new BadPacketException("Too many packets in a single batch");
+		try{
+			foreach($stream->getPackets($this->packetPool, 500) as $packet){
+				try{
+					$this->handleDataPacket($packet);
+				}catch(BadPacketException $e){
+					$this->logger->debug($packet->getName() . ": " . base64_encode($packet->getSerializer()->getBuffer()));
+					throw BadPacketException::wrap($e, "Error processing " . $packet->getName());
+				}
 			}
-			try{
-				$pk = $stream->getPacket($this->packetPool);
-			}catch(BinaryDataException $e){
-				$this->logger->debug("Packet batch: " . base64_encode($stream->getBuffer()));
-				throw BadPacketException::wrap($e, "Packet batch decode error");
-			}
-
-			try{
-				$this->handleDataPacket($pk);
-			}catch(BadPacketException $e){
-				$this->logger->debug($pk->getName() . ": " . base64_encode($pk->getSerializer()->getBuffer()));
-				throw BadPacketException::wrap($e, "Error processing " . $pk->getName());
-			}
+		}catch(PacketDecodeException $e){
+			$this->logger->logException($e);
+			throw BadPacketException::wrap($e, "Packet batch decode error");
 		}
 	}
 
@@ -652,7 +649,9 @@ class NetworkSession{
 	}
 
 	public function onDeath() : void{
-		$this->setHandler(new DeathPacketHandler($this->player, $this));
+		if($this->handler instanceof InGamePacketHandler){ //TODO: this is a bad fix for pre-spawn death, this shouldn't be reachable at all at this stage :(
+			$this->setHandler(new DeathPacketHandler($this->player, $this));
+		}
 	}
 
 	public function onRespawn() : void{
@@ -827,7 +826,7 @@ class NetworkSession{
 	public function startUsingChunk(int $chunkX, int $chunkZ, \Closure $onCompletion) : void{
 		Utils::validateCallableSignature(function(int $chunkX, int $chunkZ) : void{}, $onCompletion);
 
-		$world = $this->player->getLocation()->getWorldNonNull();
+		$world = $this->player->getLocation()->getWorld();
 		ChunkCache::getInstance($world, $this->compressor)->request($chunkX, $chunkZ)->onResolve(
 
 			//this callback may be called synchronously or asynchronously, depending on whether the promise is resolved yet
@@ -835,7 +834,7 @@ class NetworkSession{
 				if(!$this->isConnected()){
 					return;
 				}
-				$currentWorld = $this->player->getLocation()->getWorldNonNull();
+				$currentWorld = $this->player->getLocation()->getWorld();
 				if($world !== $currentWorld or !$this->player->isUsingChunk($chunkX, $chunkZ)){
 					$this->logger->debug("Tried to send no-longer-active chunk $chunkX $chunkZ in world " . $world->getFolderName());
 					return;

@@ -47,8 +47,8 @@ class Armor extends Durable{
 	/** @var Color|null */
 	protected $customColor = null;
 
-	public function __construct(int $id, int $variant, string $name, ArmorTypeInfo $info){
-		parent::__construct($id, $variant, $name);
+	public function __construct(ItemIdentifier $identifier, string $name, ArmorTypeInfo $info){
+		parent::__construct($identifier, $name);
 		$this->armorInfo = $info;
 	}
 
@@ -133,8 +133,8 @@ class Armor extends Durable{
 
 	protected function deserializeCompoundTag(CompoundTag $tag) : void{
 		parent::deserializeCompoundTag($tag);
-		if($tag->hasTag(self::TAG_CUSTOM_COLOR, IntTag::class)){
-			$this->customColor = Color::fromARGB(Binary::unsignInt($tag->getInt(self::TAG_CUSTOM_COLOR)));
+		if(($colorTag = $tag->getTag(self::TAG_CUSTOM_COLOR)) instanceof IntTag){
+			$this->customColor = Color::fromARGB(Binary::unsignInt($colorTag->getValue()));
 		}else{
 			$this->customColor = null;
 		}

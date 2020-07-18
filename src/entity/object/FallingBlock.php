@@ -30,9 +30,11 @@ use pocketmine\entity\Entity;
 use pocketmine\entity\Location;
 use pocketmine\event\entity\EntityBlockChangeEvent;
 use pocketmine\event\entity\EntityDamageEvent;
+use pocketmine\math\Vector3;
 use pocketmine\nbt\tag\ByteTag;
 use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\nbt\tag\IntTag;
+use pocketmine\network\mcpe\convert\RuntimeBlockMapping;
 use pocketmine\network\mcpe\protocol\types\entity\EntityIds;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataCollection;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataProperties;
@@ -44,8 +46,6 @@ class FallingBlock extends Entity{
 
 	public $width = 0.98;
 	public $height = 0.98;
-
-	protected $baseOffset = 0.49;
 
 	protected $gravity = 0.04;
 	protected $drag = 0.02;
@@ -64,10 +64,10 @@ class FallingBlock extends Entity{
 		$blockId = 0;
 
 		//TODO: 1.8+ save format
-		if($nbt->hasTag("TileID", IntTag::class)){
-			$blockId = $nbt->getInt("TileID");
-		}elseif($nbt->hasTag("Tile", ByteTag::class)){
-			$blockId = $nbt->getByte("Tile");
+		if(($tileIdTag = $nbt->getTag("TileID")) instanceof IntTag){
+			$blockId = $tileIdTag->getValue();
+		}elseif(($tileTag = $nbt->getTag("Tile")) instanceof ByteTag){
+			$blockId = $tileTag->getValue();
 		}
 
 		if($blockId === 0){
@@ -147,6 +147,10 @@ class FallingBlock extends Entity{
 	protected function syncNetworkData(EntityMetadataCollection $properties) : void{
 		parent::syncNetworkData($properties);
 
-		$properties->setInt(EntityMetadataProperties::VARIANT, $this->block->getRuntimeId());
+		$properties->setInt(EntityMetadataProperties::VARIANT, RuntimeBlockMapping::getInstance()->toRuntimeId($this->block->getId(), $this->block->getMeta()));
+	}
+
+	public function getOffsetPosition(Vector3 $vector3) : Vector3{
+		return $vector3->add(0, 0.49, 0); //TODO: check if height affects this
 	}
 }

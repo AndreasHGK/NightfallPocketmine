@@ -89,13 +89,13 @@ abstract class Tile{
 	 * @throws \RuntimeException
 	 */
 	public function copyDataFromItem(Item $item) : void{
-		if($item->hasCustomBlockData()){ //TODO: check item root tag (MCPE doesn't use BlockEntityTag)
-			$this->readSaveData($item->getCustomBlockData());
+		if(($blockNbt = $item->getCustomBlockData()) !== null){ //TODO: check item root tag (MCPE doesn't use BlockEntityTag)
+			$this->readSaveData($blockNbt);
 		}
 	}
 
 	public function getBlock() : Block{
-		return $this->pos->getWorldNonNull()->getBlock($this->pos);
+		return $this->pos->getWorld()->getBlock($this->pos);
 	}
 
 	public function getPos() : Position{
@@ -130,7 +130,7 @@ abstract class Tile{
 			$this->closed = true;
 
 			if($this->pos->isValid()){
-				$this->pos->getWorldNonNull()->removeTile($this);
+				$this->pos->getWorld()->removeTile($this);
 			}
 			$this->pos = null;
 		}

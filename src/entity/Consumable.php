@@ -21,25 +21,14 @@
 
 declare(strict_types=1);
 
-namespace pocketmine\item;
+namespace pocketmine\entity;
 
-use pocketmine\block\Block;
 use pocketmine\entity\effect\EffectInstance;
-use pocketmine\entity\Living;
 
 /**
  * Interface implemented by objects that can be consumed by mobs.
  */
 interface Consumable{
-
-	/**
-	 * Returns the leftover that this Consumable produces when it is consumed. For Items, this is usually air, but could
-	 * be an Item to add to a Player's inventory afterwards (such as a bowl).
-	 *
-	 * @return Item|Block|mixed
-	 */
-	public function getResidue();
-
 	/**
 	 * @return EffectInstance[]
 	 */

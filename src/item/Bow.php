@@ -34,7 +34,7 @@ use pocketmine\world\sound\BowShootSound;
 use function intdiv;
 use function min;
 
-class Bow extends Tool{
+class Bow extends Tool implements Releasable{
 
 	public function getFuelTime() : int{
 		return 200;
@@ -103,7 +103,7 @@ class Bow extends Tool{
 			}
 
 			$ev->getProjectile()->spawnToAll();
-			$location->getWorldNonNull()->addSound($location, new BowShootSound());
+			$location->getWorld()->addSound($location, new BowShootSound());
 		}else{
 			$entity->spawnToAll();
 		}

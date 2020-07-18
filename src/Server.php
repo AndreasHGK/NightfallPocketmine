@@ -931,6 +931,8 @@ class Server{
 			TimingsHandler::setEnabled((bool) $this->configGroup->getProperty("settings.enable-profiling", false));
 			$this->profilingTickRate = (float) $this->configGroup->getProperty("settings.profile-report-trigger", 20);
 
+			DefaultPermissions::registerCorePermissions();
+
 			$this->commandMap = new SimpleCommandMap($this);
 
 			Enchantment::init();
@@ -1059,7 +1061,7 @@ class Server{
 			$this->logger->info($this->getLanguage()->translateString("pocketmine.server.startFinished", [round(microtime(true) - $this->startTime, 3)]));
 
 			//TODO: move console parts to a separate component
-			$consoleSender = new ConsoleCommandSender($this);
+			$consoleSender = new ConsoleCommandSender($this, $this->language);
 			PermissionManager::getInstance()->subscribeToPermission(Server::BROADCAST_CHANNEL_ADMINISTRATIVE, $consoleSender);
 			PermissionManager::getInstance()->subscribeToPermission(Server::BROADCAST_CHANNEL_USERS, $consoleSender);
 
@@ -1268,7 +1270,6 @@ class Server{
 
 		if($type->equals(PluginLoadOrder::POSTWORLD())){
 			$this->commandMap->registerServerAliases();
-			DefaultPermissions::registerCorePermissions();
 		}
 	}
 

@@ -64,12 +64,10 @@ class Item implements \JsonSerializable{
 	public const TAG_DISPLAY_NAME = "Name";
 	public const TAG_DISPLAY_LORE = "Lore";
 
-	/** @var int */
-	protected $id;
-	/** @var int */
-	protected $meta;
-	/** @var CompoundTag|null */
-	private $nbt = null;
+	/** @var ItemIdentifier */
+	private $identifier;
+	/** @var CompoundTag */
+	private $nbt;
 	/** @var int */
 	protected $count = 1;
 	/** @var string */
@@ -105,16 +103,13 @@ class Item implements \JsonSerializable{
 	 * NOTE: This should NOT BE USED for creating items to set into an inventory. Use {@link ItemFactory#get} for that
 	 * purpose.
 	 */
-	public function __construct(int $id, int $variant = 0, string $name = "Unknown"){
-		if($id < -0x8000 or $id > 0x7fff){ //signed short range
-			throw new \InvalidArgumentException("ID must be in range " . -0x8000 . " - " . 0x7fff);
-		}
-		$this->id = $id;
-		$this->meta = $variant !== -1 ? $variant & 0x7FFF : -1;
+	public function __construct(ItemIdentifier $identifier, string $name = "Unknown"){
+		$this->identifier = $identifier;
 		$this->name = $name;
 
 		$this->canPlaceOn = new Set();
 		$this->canDestroy = new Set();
+		$this->nbt = new CompoundTag();
 	}
 
 	public function hasCustomBlockData() : bool{
@@ -234,9 +229,6 @@ class Item implements \JsonSerializable{
 	 * object is returned to allow the caller to manipulate and apply back to the item.
 	 */
 	public function getNamedTag() : CompoundTag{
-		if($this->nbt === null){
-			$this->nbt = new CompoundTag();
-		}
 		$this->serializeCompoundTag($this->nbt);
 		return $this->nbt;
 	}
@@ -353,8 +345,8 @@ class Item implements \JsonSerializable{
 			$tag->removeTag(self::TAG_ENCH);
 		}
 
-		$this->hasCustomBlockData() ?
-			$tag->setTag(self::TAG_BLOCK_ENTITY_TAG, clone $this->getCustomBlockData()) :
+		($blockData = $this->getCustomBlockData()) !== null ?
+			$tag->setTag(self::TAG_BLOCK_ENTITY_TAG, clone $blockData) :
 			$tag->removeTag(self::TAG_BLOCK_ENTITY_TAG);
 
 		if(!$this->canPlaceOn->isEmpty()){
@@ -410,7 +402,7 @@ class Item implements \JsonSerializable{
 	}
 
 	public function isNull() : bool{
-		return $this->count <= 0 or $this->id === ItemIds::AIR;
+		return $this->count <= 0 or $this->getId() === ItemIds::AIR;
 	}
 
 	/**
@@ -439,11 +431,11 @@ class Item implements \JsonSerializable{
 	}
 
 	final public function getId() : int{
-		return $this->id;
+		return $this->identifier->getId();
 	}
 
 	public function getMeta() : int{
-		return $this->meta;
+		return $this->identifier->getMeta();
 	}
 
 	/**
@@ -451,7 +443,7 @@ class Item implements \JsonSerializable{
 	 * Used in crafting recipes which accept multiple variants of the same item, for example crafting tables recipes.
 	 */
 	public function hasAnyDamageValue() : bool{
-		return $this->meta === -1;
+		return $this->identifier->getMeta() === -1;
 	}
 
 	/**
@@ -556,7 +548,7 @@ class Item implements \JsonSerializable{
 	 * @param bool $checkCompound Whether to verify that the items' NBT match.
 	 */
 	final public function equals(Item $item, bool $checkDamage = true, bool $checkCompound = true) : bool{
-		return $this->id === $item->getId() and
+		return $this->getId() === $item->getId() and
 			(!$checkDamage or $this->getMeta() === $item->getMeta()) and
 			(!$checkCompound or $this->getNamedTag()->equals($item->getNamedTag()));
 	}
@@ -569,7 +561,7 @@ class Item implements \JsonSerializable{
 	}
 
 	final public function __toString() : string{
-		return "Item " . $this->name . " (" . $this->id . ":" . ($this->hasAnyDamageValue() ? "?" : $this->getMeta()) . ")x" . $this->count . ($this->hasNamedTag() ? " tags:0x" . base64_encode((new LittleEndianNbtSerializer())->write(new TreeRoot($this->getNamedTag()))) : "");
+		return "Item " . $this->name . " (" . $this->getId() . ":" . ($this->hasAnyDamageValue() ? "?" : $this->getMeta()) . ")x" . $this->count . ($this->hasNamedTag() ? " tags:0x" . base64_encode((new LittleEndianNbtSerializer())->write(new TreeRoot($this->getNamedTag()))) : "");
 	}
 
 	/**
@@ -636,7 +628,7 @@ class Item implements \JsonSerializable{
 	 */
 	public function nbtSerialize(int $slot = -1) : CompoundTag{
 		$result = CompoundTag::create()
-			->setShort("id", $this->id)
+			->setShort("id", $this->getId())
 			->setByte("Count", Binary::signByte($this->count))
 			->setShort("Damage", $this->getMeta());
 
@@ -655,7 +647,7 @@ class Item implements \JsonSerializable{
 	 * Deserializes an Item from an NBT CompoundTag
 	 */
 	public static function nbtDeserialize(CompoundTag $tag) : Item{
-		if(!$tag->hasTag("id") or !$tag->hasTag("Count")){
+		if($tag->getTag("id") === null or $tag->getTag("Count") === null){
 			return ItemFactory::getInstance()->get(0);
 		}
 
@@ -666,13 +658,12 @@ class Item implements \JsonSerializable{
 		if($idTag instanceof ShortTag){
 			$item = ItemFactory::getInstance()->get($idTag->getValue(), $meta, $count);
 		}elseif($idTag instanceof StringTag){ //PC item save format
-			try{
-				$item = LegacyStringToItemParser::getInstance()->parse($idTag->getValue() . ":$meta");
-			}catch(\InvalidArgumentException $e){
-				//TODO: improve error handling
+			//TODO: this isn't a very good mapping source, we need a dedicated mapping for PC
+			$id = LegacyStringToItemParser::getInstance()->parseId($idTag->getValue());
+			if($id === null){
 				return ItemFactory::air();
 			}
-			$item->setCount($count);
+			$item = ItemFactory::getInstance()->get($id, $meta, $count);
 		}else{
 			throw new \InvalidArgumentException("Item CompoundTag ID must be an instance of StringTag or ShortTag, " . get_class($idTag) . " given");
 		}
@@ -686,9 +677,7 @@ class Item implements \JsonSerializable{
 	}
 
 	public function __clone(){
-		if($this->nbt !== null){
-			$this->nbt = clone $this->nbt;
-		}
+		$this->nbt = clone $this->nbt;
 		if($this->blockEntityTag !== null){
 			$this->blockEntityTag = clone $this->blockEntityTag;
 		}

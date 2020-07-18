@@ -39,7 +39,6 @@ use pocketmine\inventory\ArmorInventory;
 use pocketmine\inventory\CallbackInventoryListener;
 use pocketmine\inventory\Inventory;
 use pocketmine\item\Armor;
-use pocketmine\item\Consumable;
 use pocketmine\item\Durable;
 use pocketmine\item\enchantment\Enchantment;
 use pocketmine\item\Item;
@@ -135,12 +134,12 @@ abstract class Living extends Entity{
 
 		$health = $this->getMaxHealth();
 
-		if($nbt->hasTag("HealF", FloatTag::class)){
-			$health = $nbt->getFloat("HealF");
-		}elseif($nbt->hasTag("Health", ShortTag::class)){
-			$health = $nbt->getShort("Health"); //Older versions of PocketMine-MP incorrectly saved this as a short instead of a float
-		}elseif($nbt->hasTag("Health", FloatTag::class)){
-			$health = $nbt->getFloat("Health");
+		if(($healFTag = $nbt->getTag("HealF")) instanceof FloatTag){
+			$health = $healFTag->getValue();
+		}elseif(($healthTag = $nbt->getTag("Health")) instanceof ShortTag){
+			$health = $healthTag->getValue(); //Older versions of PocketMine-MP incorrectly saved this as a short instead of a float
+		}elseif(($healthTag = $nbt->getTag("Health")) instanceof FloatTag){
+			$health = $healthTag->getValue();
 		}
 
 		$this->setHealth($health);
@@ -281,7 +280,7 @@ abstract class Living extends Entity{
 	 * Returns the initial upwards velocity of a jumping entity in blocks/tick, including additional velocity due to effects.
 	 */
 	public function getJumpVelocity() : float{
-		return $this->jumpVelocity + ($this->effectManager->has(VanillaEffects::JUMP_BOOST()) ? ($this->effectManager->get(VanillaEffects::JUMP_BOOST())->getEffectLevel() / 10) : 0);
+		return $this->jumpVelocity + ((($jumpBoost = $this->effectManager->get(VanillaEffects::JUMP_BOOST())) !== null ? $jumpBoost->getEffectLevel() : 0) / 10);
 	}
 
 	/**
@@ -294,7 +293,7 @@ abstract class Living extends Entity{
 	}
 
 	public function fall(float $fallDistance) : void{
-		$damage = ceil($fallDistance - 3 - ($this->effectManager->has(VanillaEffects::JUMP_BOOST()) ? $this->effectManager->get(VanillaEffects::JUMP_BOOST())->getEffectLevel() : 0));
+		$damage = ceil($fallDistance - 3 - (($jumpBoost = $this->effectManager->get(VanillaEffects::JUMP_BOOST())) !== null ? $jumpBoost->getEffectLevel() : 0));
 		if($damage > 0){
 			$ev = new EntityDamageEvent($this, EntityDamageEvent::CAUSE_FALL, $damage);
 			$this->attack($ev);
@@ -367,8 +366,8 @@ abstract class Living extends Entity{
 		}
 
 		$cause = $source->getCause();
-		if($this->effectManager->has(VanillaEffects::RESISTANCE()) and $cause !== EntityDamageEvent::CAUSE_VOID and $cause !== EntityDamageEvent::CAUSE_SUICIDE){
-			$source->setModifier(-$source->getFinalDamage() * min(1, 0.2 * $this->effectManager->get(VanillaEffects::RESISTANCE())->getEffectLevel()), EntityDamageEvent::MODIFIER_RESISTANCE);
+		if(($resistance = $this->effectManager->get(VanillaEffects::RESISTANCE())) !== null and $cause !== EntityDamageEvent::CAUSE_VOID and $cause !== EntityDamageEvent::CAUSE_SUICIDE){
+			$source->setModifier(-$source->getFinalDamage() * min(1, 0.2 * $resistance->getEffectLevel()), EntityDamageEvent::MODIFIER_RESISTANCE);
 		}
 
 		$totalEpf = 0;
@@ -391,7 +390,7 @@ abstract class Living extends Entity{
 		$this->setAbsorption(max(0, $this->getAbsorption() + $source->getModifier(EntityDamageEvent::MODIFIER_ABSORPTION)));
 		$this->damageArmor($source->getBaseDamage());
 
-		if($source instanceof EntityDamageByEntityEvent){
+		if($source instanceof EntityDamageByEntityEvent and ($attacker = $source->getDamager()) !== null){
 			$damage = 0;
 			foreach($this->armorInventory->getContents() as $k => $item){
 				if($item instanceof Armor and ($thornsLevel = $item->getEnchantmentLevel(Enchantment::THORNS())) > 0){
@@ -407,7 +406,7 @@ abstract class Living extends Entity{
 			}
 
 			if($damage > 0){
-				$source->getDamager()->attack(new EntityDamageByEntityEvent($this, $source->getDamager(), EntityDamageEvent::CAUSE_MAGIC, $damage));
+				$attacker->attack(new EntityDamageByEntityEvent($this, $attacker, EntityDamageEvent::CAUSE_MAGIC, $damage));
 			}
 		}
 	}
@@ -503,20 +502,18 @@ abstract class Living extends Entity{
 		if(mt_rand() / mt_getrandmax() > $this->knockbackResistanceAttr->getValue()){
 			$f = 1 / $f;
 
-			$motion = clone $this->motion;
+			$motionX = $this->motion->x / 2;
+			$motionY = $this->motion->y / 2;
+			$motionZ = $this->motion->z / 2;
+			$motionX += $x * $f * $base;
+			$motionY += $base;
+			$motionZ += $z * $f * $base;
 
-			$motion->x /= 2;
-			$motion->y /= 2;
-			$motion->z /= 2;
-			$motion->x += $x * $f * $base;
-			$motion->y += $base;
-			$motion->z += $z * $f * $base;
-
-			if($motion->y > $base){
-				$motion->y = $base;
+			if($motionY > $base){
+				$motionY = $base;
 			}
 
-			$this->setMotion($motion);
+			$this->setMotion(new Vector3($motionX, $motionY, $motionZ));
 		}
 	}
 

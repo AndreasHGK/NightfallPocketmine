@@ -28,6 +28,7 @@ use pocketmine\block\tile\Banner as TileBanner;
 use pocketmine\block\utils\BannerPattern;
 use pocketmine\block\utils\BlockDataSerializer;
 use pocketmine\block\utils\DyeColor;
+use pocketmine\data\bedrock\DyeColorIdMap;
 use pocketmine\item\Banner as ItemBanner;
 use pocketmine\item\Item;
 use pocketmine\item\ItemFactory;
@@ -99,7 +100,7 @@ class Banner extends Transparent{
 
 	public function readStateFromWorld() : void{
 		parent::readStateFromWorld();
-		$tile = $this->pos->getWorldNonNull()->getTile($this->pos);
+		$tile = $this->pos->getWorld()->getTile($this->pos);
 		if($tile instanceof TileBanner){
 			$this->baseColor = $tile->getBaseColor();
 			$this->setPatterns($tile->getPatterns());
@@ -108,7 +109,7 @@ class Banner extends Transparent{
 
 	public function writeStateToWorld() : void{
 		parent::writeStateToWorld();
-		$tile = $this->pos->getWorldNonNull()->getTile($this->pos);
+		$tile = $this->pos->getWorld()->getTile($this->pos);
 		assert($tile instanceof TileBanner);
 		$tile->setBaseColor($this->baseColor);
 		$tile->setPatterns($this->patterns);
@@ -171,12 +172,12 @@ class Banner extends Transparent{
 
 	public function onNearbyBlockChange() : void{
 		if($this->getSide(Facing::opposite($this->facing))->getId() === BlockLegacyIds::AIR){
-			$this->pos->getWorldNonNull()->useBreakOn($this->pos);
+			$this->pos->getWorld()->useBreakOn($this->pos);
 		}
 	}
 
 	public function asItem() : Item{
-		return ItemFactory::getInstance()->get(ItemIds::BANNER, $this->baseColor->getInvertedMagicNumber());
+		return ItemFactory::getInstance()->get(ItemIds::BANNER, DyeColorIdMap::getInstance()->toInvertedId($this->baseColor));
 	}
 
 	public function getDropsForCompatibleTool(Item $item) : array{

@@ -26,6 +26,7 @@ namespace pocketmine\block;
 use pocketmine\block\tile\Bed as TileBed;
 use pocketmine\block\utils\BlockDataSerializer;
 use pocketmine\block\utils\DyeColor;
+use pocketmine\data\bedrock\DyeColorIdMap;
 use pocketmine\item\Bed as ItemBed;
 use pocketmine\item\Item;
 use pocketmine\item\ItemFactory;
@@ -73,7 +74,7 @@ class Bed extends Transparent{
 	public function readStateFromWorld() : void{
 		parent::readStateFromWorld();
 		//read extra state information from the tile - this is an ugly hack
-		$tile = $this->pos->getWorldNonNull()->getTile($this->pos);
+		$tile = $this->pos->getWorld()->getTile($this->pos);
 		if($tile instanceof TileBed){
 			$this->color = $tile->getColor();
 		}
@@ -82,7 +83,7 @@ class Bed extends Transparent{
 	public function writeStateToWorld() : void{
 		parent::writeStateToWorld();
 		//extra block properties storage hack
-		$tile = $this->pos->getWorldNonNull()->getTile($this->pos);
+		$tile = $this->pos->getWorld()->getTile($this->pos);
 		if($tile instanceof TileBed){
 			$tile->setColor($this->color);
 		}
@@ -105,11 +106,11 @@ class Bed extends Transparent{
 
 	public function setOccupied(bool $occupied = true) : void{
 		$this->occupied = $occupied;
-		$this->pos->getWorldNonNull()->setBlock($this->pos, $this, false);
+		$this->pos->getWorld()->setBlock($this->pos, $this, false);
 
 		if(($other = $this->getOtherHalf()) !== null){
 			$other->occupied = $occupied;
-			$this->pos->getWorldNonNull()->setBlock($other->pos, $other, false);
+			$this->pos->getWorld()->setBlock($other->pos, $other, false);
 		}
 	}
 
@@ -139,7 +140,7 @@ class Bed extends Transparent{
 				return true;
 			}
 
-			$time = $this->pos->getWorldNonNull()->getTimeOfDay();
+			$time = $this->pos->getWorld()->getTimeOfDay();
 
 			$isNight = ($time >= World::TIME_NIGHT and $time < World::TIME_SUNRISE);
 
@@ -193,7 +194,7 @@ class Bed extends Transparent{
 	}
 
 	public function asItem() : Item{
-		return ItemFactory::getInstance()->get($this->idInfo->getItemId(), $this->color->getMagicNumber());
+		return ItemFactory::getInstance()->get($this->idInfo->getItemId(), DyeColorIdMap::getInstance()->toId($this->color));
 	}
 
 	public function getAffectedBlocks() : array{

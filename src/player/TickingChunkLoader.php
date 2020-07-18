@@ -21,29 +21,29 @@
 
 declare(strict_types=1);
 
-namespace pocketmine\scheduler;
+namespace pocketmine\player;
 
-use function file_put_contents;
+use pocketmine\math\Vector3;
+use pocketmine\world\ChunkLoader;
 
-class FileWriteTask extends AsyncTask{
+final class TickingChunkLoader implements ChunkLoader{
 
-	/** @var string */
-	private $path;
-	/** @var mixed */
-	private $contents;
-	/** @var int */
-	private $flags;
+	/** @var Vector3 */
+	private $currentLocation;
 
-	/**
-	 * @param mixed  $contents
-	 */
-	public function __construct(string $path, $contents, int $flags = 0){
-		$this->path = $path;
-		$this->contents = $contents;
-		$this->flags = $flags;
+	public function __construct(Vector3 $currentLocation){
+		$this->currentLocation = $currentLocation;
 	}
 
-	public function onRun() : void{
-		file_put_contents($this->path, $this->contents, $this->flags);
+	public function setCurrentLocation(Vector3 $currentLocation) : void{
+		$this->currentLocation = $currentLocation;
+	}
+
+	public function getX(){
+		return $this->currentLocation->getFloorX();
+	}
+
+	public function getZ(){
+		return $this->currentLocation->getFloorZ();
 	}
 }

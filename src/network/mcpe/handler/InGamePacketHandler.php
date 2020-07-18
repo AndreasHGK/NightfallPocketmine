@@ -33,7 +33,7 @@ use pocketmine\event\player\PlayerEditBookEvent;
 use pocketmine\inventory\transaction\action\InventoryAction;
 use pocketmine\inventory\transaction\CraftingTransaction;
 use pocketmine\inventory\transaction\InventoryTransaction;
-use pocketmine\inventory\transaction\TransactionValidationException;
+use pocketmine\inventory\transaction\TransactionException;
 use pocketmine\item\VanillaItems;
 use pocketmine\item\WritableBook;
 use pocketmine\item\WrittenBook;
@@ -82,7 +82,6 @@ use pocketmine\network\mcpe\protocol\ShowCreditsPacket;
 use pocketmine\network\mcpe\protocol\SpawnExperienceOrbPacket;
 use pocketmine\network\mcpe\protocol\SubClientLoginPacket;
 use pocketmine\network\mcpe\protocol\TextPacket;
-use pocketmine\network\mcpe\protocol\types\inventory\ContainerIds;
 use pocketmine\network\mcpe\protocol\types\inventory\MismatchTransactionData;
 use pocketmine\network\mcpe\protocol\types\inventory\NetworkInventoryAction;
 use pocketmine\network\mcpe\protocol\types\inventory\NormalTransactionData;
@@ -92,6 +91,7 @@ use pocketmine\network\mcpe\protocol\types\inventory\UseItemTransactionData;
 use pocketmine\network\mcpe\protocol\types\inventory\WindowTypes;
 use pocketmine\player\Player;
 use pocketmine\utils\AssumptionFailedError;
+use function array_key_exists;
 use function array_push;
 use function base64_encode;
 use function count;
@@ -125,6 +125,15 @@ class InGamePacketHandler extends PacketHandler{
 	protected $lastRightClickTime = 0.0;
 	/** @var Vector3|null */
 	protected $lastRightClickPos = null;
+
+	/**
+	 * TODO: HACK! This tracks GUIs for inventories that the server considers "always open" so that the client can't
+	 * open them twice. (1.16 hack)
+	 * @var true[]
+	 * @phpstan-var array<int, true>
+	 * @internal
+	 */
+	protected $openHardcodedWindows = [];
 
 	public function __construct(Player $player, NetworkSession $session){
 		$this->player = $player;
@@ -237,7 +246,7 @@ class InGamePacketHandler extends PacketHandler{
 			//trying to execute it
 
 			if($this->craftingTransaction === null){
-				$this->craftingTransaction = new CraftingTransaction($this->player, $actions);
+				$this->craftingTransaction = new CraftingTransaction($this->player, $this->player->getServer()->getCraftingManager(), $actions);
 			}else{
 				foreach($actions as $action){
 					$this->craftingTransaction->addAction($action);
@@ -248,9 +257,13 @@ class InGamePacketHandler extends PacketHandler{
 				try{
 					$this->session->getInvManager()->onTransactionStart($this->craftingTransaction);
 					$this->craftingTransaction->execute();
-				}catch(TransactionValidationException $e){
+				}catch(TransactionException $e){
 					$this->session->getLogger()->debug("Failed to execute crafting transaction: " . $e->getMessage());
 
+					//TODO: only sync slots that the client tried to change
+					foreach($this->craftingTransaction->getInventories() as $inventory){
+						$this->session->getInvManager()->syncContents($inventory);
+					}
 					/*
 					 * TODO: HACK!
 					 * we can't resend the contents of the crafting window, so we force the client to close it instead.
@@ -281,10 +294,14 @@ class InGamePacketHandler extends PacketHandler{
 			$this->session->getInvManager()->onTransactionStart($transaction);
 			try{
 				$transaction->execute();
-			}catch(TransactionValidationException $e){
+			}catch(TransactionException $e){
 				$logger = $this->session->getLogger();
 				$logger->debug("Failed to execute inventory transaction: " . $e->getMessage());
 				$logger->debug("Actions: " . json_encode($data->getActions()));
+
+				foreach($transaction->getInventories() as $inventory){
+					$this->session->getInvManager()->syncContents($inventory);
+				}
 
 				return false;
 			}
@@ -313,9 +330,13 @@ class InGamePacketHandler extends PacketHandler{
 				$blockPos = $data->getBlockPos();
 				if(!$this->player->interactBlock($blockPos, $data->getFace(), $clickPos)){
 					$this->onFailedBlockAction($blockPos, $data->getFace());
-				}elseif($this->player->getWorld()->getBlock($blockPos)->getId() === BlockLegacyIds::CRAFTING_TABLE){
+				}elseif(
+					$this->player->getWorld()->getBlock($blockPos)->getId() === BlockLegacyIds::CRAFTING_TABLE &&
+					!array_key_exists($windowId = InventoryManager::HARDCODED_CRAFTING_GRID_WINDOW_ID, $this->openHardcodedWindows)
+				){
 					//TODO: HACK! crafting grid doesn't fit very well into the current PM container system, so this hack
 					//allows it to carry on working approximately the same way as it did in 1.14
+					$this->openHardcodedWindows[$windowId] = true;
 					$this->session->sendDataPacket(ContainerOpenPacket::blockInvVec3(
 						InventoryManager::HARDCODED_CRAFTING_GRID_WINDOW_ID,
 						WindowTypes::WORKBENCH,
@@ -360,7 +381,7 @@ class InGamePacketHandler extends PacketHandler{
 			}else{
 				$blocks[] = $blockPos;
 			}
-			$this->player->getLocation()->getWorldNonNull()->sendBlocks([$this->player], $blocks);
+			$this->player->getLocation()->getWorld()->sendBlocks([$this->player], $blocks);
 		}
 	}
 
@@ -424,10 +445,14 @@ class InGamePacketHandler extends PacketHandler{
 		if($target === null){
 			return false;
 		}
-		if($packet->action === InteractPacket::ACTION_OPEN_INVENTORY && $target === $this->player){
+		if(
+			$packet->action === InteractPacket::ACTION_OPEN_INVENTORY && $target === $this->player &&
+			!array_key_exists($windowId = InventoryManager::HARDCODED_INVENTORY_WINDOW_ID, $this->openHardcodedWindows)
+		){
 			//TODO: HACK! this restores 1.14ish behaviour, but this should be able to be listened to and
 			//controlled by plugins. However, the player is always a subscriber to their own inventory so it
 			//doesn't integrate well with the regular container system right now.
+			$this->openHardcodedWindows[$windowId] = true;
 			$this->session->sendDataPacket(ContainerOpenPacket::entityInv(
 				InventoryManager::HARDCODED_INVENTORY_WINDOW_ID,
 				WindowTypes::INVENTORY,
@@ -524,7 +549,11 @@ class InGamePacketHandler extends PacketHandler{
 	public function handleContainerClose(ContainerClosePacket $packet) : bool{
 		$this->player->doCloseInventory();
 
-		$this->session->getInvManager()->onClientRemoveWindow($packet->windowId);
+		if(array_key_exists($packet->windowId, $this->openHardcodedWindows)){
+			unset($this->openHardcodedWindows[$packet->windowId]);
+		}else{
+			$this->session->getInvManager()->onClientRemoveWindow($packet->windowId);
+		}
 
 		$this->session->sendDataPacket(ContainerClosePacket::create($packet->windowId));
 		return true;
@@ -564,14 +593,14 @@ class InGamePacketHandler extends PacketHandler{
 			return false;
 		}
 
-		$block = $this->player->getLocation()->getWorldNonNull()->getBlock($pos);
+		$block = $this->player->getLocation()->getWorld()->getBlock($pos);
 		$nbt = $packet->namedtag->getRoot();
 		if(!($nbt instanceof CompoundTag)) throw new AssumptionFailedError("PHPStan should ensure this is a CompoundTag"); //for phpstorm's benefit
 
 		if($block instanceof Sign){
-			if($nbt->hasTag("Text", StringTag::class)){
+			if(($textBlobTag = $nbt->getTag("Text")) instanceof StringTag){
 				try{
-					$text = SignText::fromBlob($nbt->getString("Text"));
+					$text = SignText::fromBlob($textBlobTag->getValue());
 				}catch(\InvalidArgumentException $e){
 					throw BadPacketException::wrap($e, "Invalid sign text update");
 				}
