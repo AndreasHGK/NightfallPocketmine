@@ -42,6 +42,7 @@ use pocketmine\network\mcpe\convert\RuntimeBlockMapping;
 use pocketmine\player\Player;
 use pocketmine\world\BlockTransaction;
 use pocketmine\world\Position;
+use pocketmine\world\sound\NoteInstrument;
 use pocketmine\world\World;
 use function assert;
 use function count;
@@ -409,6 +410,15 @@ class Block{
 	 */
 	public function isAffectedBySilkTouch() : bool{
 		return false;
+	}
+
+	/**
+	 * Return the instrument that a noteblock on top of this block will play
+	 *
+	 * @return NoteInstrument
+	 */
+	public function getNoteblockInstrument() : NoteInstrument {
+		return NoteInstrument::PIANO();
 	}
 
 	/**
