@@ -24,6 +24,7 @@ declare(strict_types=1);
 namespace pocketmine\block;
 
 use pocketmine\block\tile\Note as TileNote;
+use pocketmine\block\utils\note\DoubleBassInstrumentTrait;
 use pocketmine\item\Item;
 use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
@@ -34,6 +35,9 @@ use pocketmine\world\sound\NoteSound;
 use function assert;
 
 class Note extends Opaque{
+
+	use DoubleBassInstrumentTrait;
+
 	public const MIN_PITCH = 0;
 	public const MAX_PITCH = 24;
 

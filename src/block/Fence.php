@@ -23,11 +23,15 @@ declare(strict_types=1);
 
 namespace pocketmine\block;
 
+use pocketmine\block\utils\note\BassdrumInstrumentTrait;
 use pocketmine\math\AxisAlignedBB;
 use pocketmine\math\Facing;
 use function count;
 
 class Fence extends Transparent{
+
+	use BassdrumInstrumentTrait;
+
 	/** @var bool[] facing => dummy */
 	protected $connections = [];
 

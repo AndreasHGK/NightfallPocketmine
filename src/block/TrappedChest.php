@@ -23,7 +23,11 @@ declare(strict_types=1);
 
 namespace pocketmine\block;
 
+use pocketmine\block\utils\note\DoubleBassInstrumentTrait;
+
 class TrappedChest extends Chest{
+
+	use DoubleBassInstrumentTrait;
 
 	//TODO: Redstone!
 

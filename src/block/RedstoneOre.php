@@ -23,6 +23,7 @@ declare(strict_types=1);
 
 namespace pocketmine\block;
 
+use pocketmine\block\utils\note\BassdrumInstrumentTrait;
 use pocketmine\item\Item;
 use pocketmine\item\ToolTier;
 use pocketmine\item\VanillaItems;
@@ -31,6 +32,9 @@ use pocketmine\player\Player;
 use function mt_rand;
 
 class RedstoneOre extends Opaque{
+
+	use BassdrumInstrumentTrait;
+
 	/** @var BlockIdentifierFlattened */
 	protected $idInfo;
 

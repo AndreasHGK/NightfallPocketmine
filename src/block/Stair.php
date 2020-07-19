@@ -24,6 +24,7 @@ declare(strict_types=1);
 namespace pocketmine\block;
 
 use pocketmine\block\utils\BlockDataSerializer;
+use pocketmine\block\utils\note\BassdrumInstrumentTrait;
 use pocketmine\block\utils\StairShape;
 use pocketmine\item\Item;
 use pocketmine\math\AxisAlignedBB;
@@ -33,6 +34,8 @@ use pocketmine\player\Player;
 use pocketmine\world\BlockTransaction;
 
 class Stair extends Transparent{
+
+	use BassdrumInstrumentTrait;
 
 	/** @var int */
 	protected $facing = Facing::NORTH;

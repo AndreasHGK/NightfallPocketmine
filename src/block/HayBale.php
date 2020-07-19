@@ -23,9 +23,11 @@ declare(strict_types=1);
 
 namespace pocketmine\block;
 
+use pocketmine\block\utils\note\BanjoInstrumentTrait;
 use pocketmine\block\utils\PillarRotationTrait;
 
 class HayBale extends Opaque{
+	use BanjoInstrumentTrait;
 	use PillarRotationTrait;
 
 	public function __construct(BlockIdentifier $idInfo, string $name, ?BlockBreakInfo $breakInfo = null){

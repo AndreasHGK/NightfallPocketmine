@@ -25,9 +25,11 @@ namespace pocketmine\block;
 
 use pocketmine\block\utils\Fallable;
 use pocketmine\block\utils\FallableTrait;
+use pocketmine\block\utils\note\SnareInstrumentTrait;
 use pocketmine\math\Facing;
 
 class ConcretePowder extends Opaque implements Fallable{
+	use SnareInstrumentTrait;
 	use FallableTrait {
 		onNearbyBlockChange as protected startFalling;
 	}

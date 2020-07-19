@@ -23,10 +23,12 @@ declare(strict_types=1);
 
 namespace pocketmine\block;
 
+use pocketmine\block\utils\note\XylophoneInstrumentTrait;
 use pocketmine\block\utils\PillarRotationTrait;
 use pocketmine\item\ToolTier;
 
 class BoneBlock extends Opaque{
+	use XylophoneInstrumentTrait;
 	use PillarRotationTrait;
 
 	public function __construct(BlockIdentifier $idInfo, string $name, ?BlockBreakInfo $breakInfo = null){

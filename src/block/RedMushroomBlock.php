@@ -23,10 +23,13 @@ declare(strict_types=1);
 
 namespace pocketmine\block;
 
+use pocketmine\block\utils\note\DoubleBassInstrumentTrait;
 use pocketmine\item\Item;
 use function mt_rand;
 
 class RedMushroomBlock extends Opaque{
+
+	use DoubleBassInstrumentTrait;
 
 	/**
 	 * @var int

@@ -23,10 +23,13 @@ declare(strict_types=1);
 
 namespace pocketmine\block;
 
+use pocketmine\block\utils\note\ClicksAndSticksInstrumentTrait;
 use pocketmine\item\Item;
 use pocketmine\item\VanillaItems;
 
 class SeaLantern extends Transparent{
+
+	use ClicksAndSticksInstrumentTrait;
 
 	public function __construct(BlockIdentifier $idInfo, string $name, ?BlockBreakInfo $breakInfo = null){
 		parent::__construct($idInfo, $name, $breakInfo ?? new BlockBreakInfo(0.3));

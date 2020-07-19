@@ -23,11 +23,14 @@ declare(strict_types=1);
 
 namespace pocketmine\block;
 
+use pocketmine\block\utils\note\BassdrumInstrumentTrait;
 use pocketmine\item\ToolTier;
 use pocketmine\math\AxisAlignedBB;
 use pocketmine\math\Facing;
 
 class Wall extends Transparent{
+
+	use BassdrumInstrumentTrait;
 
 	/** @var bool[] facing => dummy */
 	protected $connections = [];

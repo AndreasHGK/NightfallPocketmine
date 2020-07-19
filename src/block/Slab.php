@@ -23,6 +23,7 @@ declare(strict_types=1);
 
 namespace pocketmine\block;
 
+use pocketmine\block\utils\note\BassdrumInstrumentTrait;
 use pocketmine\block\utils\SlabType;
 use pocketmine\item\Item;
 use pocketmine\math\AxisAlignedBB;
@@ -32,6 +33,9 @@ use pocketmine\player\Player;
 use pocketmine\world\BlockTransaction;
 
 class Slab extends Transparent{
+
+	use BassdrumInstrumentTrait;
+
 	/** @var BlockIdentifierFlattened */
 	protected $idInfo;
 

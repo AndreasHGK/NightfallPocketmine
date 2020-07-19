@@ -28,6 +28,7 @@ use pocketmine\block\tile\Banner as TileBanner;
 use pocketmine\block\utils\BannerPattern;
 use pocketmine\block\utils\BlockDataSerializer;
 use pocketmine\block\utils\DyeColor;
+use pocketmine\block\utils\note\DoubleBassInstrumentTrait;
 use pocketmine\item\Banner as ItemBanner;
 use pocketmine\item\Item;
 use pocketmine\item\ItemFactory;
@@ -41,6 +42,9 @@ use function assert;
 use function floor;
 
 class Banner extends Transparent{
+
+	use DoubleBassInstrumentTrait;
+
 	/** @var BlockIdentifierFlattened */
 	protected $idInfo;
 

@@ -23,7 +23,11 @@ declare(strict_types=1);
 
 namespace pocketmine\block;
 
+use pocketmine\block\utils\note\BassdrumInstrumentTrait;
+
 class Bedrock extends Opaque{
+
+	use BassdrumInstrumentTrait;
 
 	/** @var bool */
 	private $burnsForever = false;

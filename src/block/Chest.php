@@ -25,6 +25,7 @@ namespace pocketmine\block;
 
 use pocketmine\block\tile\Chest as TileChest;
 use pocketmine\block\utils\BlockDataSerializer;
+use pocketmine\block\utils\note\DoubleBassInstrumentTrait;
 use pocketmine\item\Item;
 use pocketmine\math\AxisAlignedBB;
 use pocketmine\math\Facing;
@@ -33,6 +34,8 @@ use pocketmine\player\Player;
 use pocketmine\world\BlockTransaction;
 
 class Chest extends Transparent{
+
+	use DoubleBassInstrumentTrait;
 
 	/** @var int */
 	protected $facing = Facing::NORTH;

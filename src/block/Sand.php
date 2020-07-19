@@ -25,8 +25,10 @@ namespace pocketmine\block;
 
 use pocketmine\block\utils\Fallable;
 use pocketmine\block\utils\FallableTrait;
+use pocketmine\block\utils\note\SnareInstrumentTrait;
 
 class Sand extends Opaque implements Fallable{
+	use SnareInstrumentTrait;
 	use FallableTrait;
 
 	public function __construct(BlockIdentifier $idInfo, string $name, ?BlockBreakInfo $breakInfo = null){

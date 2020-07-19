@@ -25,6 +25,7 @@ namespace pocketmine\block;
 
 use pocketmine\block\tile\EnderChest as TileEnderChest;
 use pocketmine\block\utils\BlockDataSerializer;
+use pocketmine\block\utils\note\BassdrumInstrumentTrait;
 use pocketmine\item\Item;
 use pocketmine\item\ToolTier;
 use pocketmine\math\AxisAlignedBB;
@@ -34,6 +35,8 @@ use pocketmine\player\Player;
 use pocketmine\world\BlockTransaction;
 
 class EnderChest extends Transparent{
+
+	use BassdrumInstrumentTrait;
 
 	/** @var int */
 	protected $facing = Facing::NORTH;

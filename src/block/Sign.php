@@ -25,6 +25,7 @@ namespace pocketmine\block;
 
 use pocketmine\block\tile\Sign as TileSign;
 use pocketmine\block\utils\BlockDataSerializer;
+use pocketmine\block\utils\note\DoubleBassInstrumentTrait;
 use pocketmine\block\utils\SignText;
 use pocketmine\event\block\SignChangeEvent;
 use pocketmine\item\Item;
@@ -40,6 +41,9 @@ use function floor;
 use function strlen;
 
 class Sign extends Transparent{
+
+	use DoubleBassInstrumentTrait;
+
 	/** @var BlockIdentifierFlattened */
 	protected $idInfo;
 

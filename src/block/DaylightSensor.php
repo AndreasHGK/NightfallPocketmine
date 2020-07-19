@@ -24,6 +24,7 @@ declare(strict_types=1);
 namespace pocketmine\block;
 
 use pocketmine\block\utils\BlockDataSerializer;
+use pocketmine\block\utils\note\DoubleBassInstrumentTrait;
 use pocketmine\item\Item;
 use pocketmine\math\AxisAlignedBB;
 use pocketmine\math\Facing;
@@ -35,6 +36,9 @@ use function round;
 use const M_PI;
 
 class DaylightSensor extends Transparent{
+
+	use DoubleBassInstrumentTrait;
+
 	/** @var BlockIdentifierFlattened */
 	protected $idInfo;
 

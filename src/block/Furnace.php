@@ -25,6 +25,7 @@ namespace pocketmine\block;
 
 use pocketmine\block\tile\Furnace as TileFurnace;
 use pocketmine\block\utils\BlockDataSerializer;
+use pocketmine\block\utils\note\BassdrumInstrumentTrait;
 use pocketmine\item\Item;
 use pocketmine\item\ToolTier;
 use pocketmine\math\Facing;
@@ -33,6 +34,9 @@ use pocketmine\player\Player;
 use pocketmine\world\BlockTransaction;
 
 class Furnace extends Opaque{
+
+	use BassdrumInstrumentTrait;
+
 	/** @var BlockIdentifierFlattened */
 	protected $idInfo;
 
