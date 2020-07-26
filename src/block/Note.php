@@ -24,7 +24,6 @@ declare(strict_types=1);
 namespace pocketmine\block;
 
 use pocketmine\block\tile\Note as TileNote;
-use pocketmine\block\utils\note\DoubleBassInstrumentTrait;
 use pocketmine\item\Item;
 use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
@@ -36,16 +35,14 @@ use function assert;
 
 class Note extends Opaque{
 
-	use DoubleBassInstrumentTrait;
-
 	public const MIN_PITCH = 0;
 	public const MAX_PITCH = 24;
 
 	/** @var int */
 	private $pitch = self::MIN_PITCH;
 
-	public function __construct(BlockIdentifier $idInfo, string $name, ?BlockBreakInfo $breakInfo = null){
-		parent::__construct($idInfo, $name, $breakInfo ?? new BlockBreakInfo(0.8, BlockToolType::AXE));
+	public function __construct(BlockIdentifier $idInfo, string $name, ?BlockBreakInfo $breakInfo = null, ?NoteInstrument $noteblockInstrument = null){
+		parent::__construct($idInfo, $name, $breakInfo ?? new BlockBreakInfo(0.8, BlockToolType::AXE), $noteblockInstrument ?? NoteInstrument::DOUBLE_BASS());
 	}
 
 	public function readStateFromWorld() : void{

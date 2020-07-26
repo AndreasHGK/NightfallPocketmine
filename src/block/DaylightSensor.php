@@ -24,20 +24,18 @@ declare(strict_types=1);
 namespace pocketmine\block;
 
 use pocketmine\block\utils\BlockDataSerializer;
-use pocketmine\block\utils\note\DoubleBassInstrumentTrait;
 use pocketmine\item\Item;
 use pocketmine\math\AxisAlignedBB;
 use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
 use pocketmine\player\Player;
+use pocketmine\world\sound\NoteInstrument;
 use function cos;
 use function max;
 use function round;
 use const M_PI;
 
 class DaylightSensor extends Transparent{
-
-	use DoubleBassInstrumentTrait;
 
 	/** @var BlockIdentifierFlattened */
 	protected $idInfo;
@@ -48,8 +46,8 @@ class DaylightSensor extends Transparent{
 	/** @var bool */
 	protected $inverted = false;
 
-	public function __construct(BlockIdentifierFlattened $idInfo, string $name, ?BlockBreakInfo $breakInfo = null){
-		parent::__construct($idInfo, $name, $breakInfo ?? new BlockBreakInfo(0.2, BlockToolType::AXE));
+	public function __construct(BlockIdentifierFlattened $idInfo, string $name, ?BlockBreakInfo $breakInfo = null, ?NoteInstrument $noteblockInstrument = null){
+		parent::__construct($idInfo, $name, $breakInfo ?? new BlockBreakInfo(0.2, BlockToolType::AXE), $noteblockInstrument ?? NoteInstrument::DOUBLE_BASS());
 	}
 
 	public function getId() : int{

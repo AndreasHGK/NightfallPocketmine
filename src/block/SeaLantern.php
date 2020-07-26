@@ -23,16 +23,14 @@ declare(strict_types=1);
 
 namespace pocketmine\block;
 
-use pocketmine\block\utils\note\ClicksAndSticksInstrumentTrait;
 use pocketmine\item\Item;
 use pocketmine\item\VanillaItems;
+use pocketmine\world\sound\NoteInstrument;
 
 class SeaLantern extends Transparent{
 
-	use ClicksAndSticksInstrumentTrait;
-
-	public function __construct(BlockIdentifier $idInfo, string $name, ?BlockBreakInfo $breakInfo = null){
-		parent::__construct($idInfo, $name, $breakInfo ?? new BlockBreakInfo(0.3));
+	public function __construct(BlockIdentifier $idInfo, string $name, ?BlockBreakInfo $breakInfo = null, ?NoteInstrument $noteblockInstrument = null){
+		parent::__construct($idInfo, $name, $breakInfo ?? new BlockBreakInfo(0.3), $noteblockInstrument ?? NoteInstrument::CLICKS_AND_STICKS());
 	}
 
 	public function getLightLevel() : int{

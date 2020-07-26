@@ -23,7 +23,6 @@ declare(strict_types=1);
 
 namespace pocketmine\block;
 
-use pocketmine\block\utils\note\BassdrumInstrumentTrait;
 use pocketmine\block\utils\SlabType;
 use pocketmine\item\Item;
 use pocketmine\math\AxisAlignedBB;
@@ -31,10 +30,9 @@ use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
 use pocketmine\player\Player;
 use pocketmine\world\BlockTransaction;
+use pocketmine\world\sound\NoteInstrument;
 
 class Slab extends Transparent{
-
-	use BassdrumInstrumentTrait;
 
 	/** @var BlockIdentifierFlattened */
 	protected $idInfo;
@@ -42,8 +40,8 @@ class Slab extends Transparent{
 	/** @var SlabType */
 	protected $slabType;
 
-	public function __construct(BlockIdentifierFlattened $idInfo, string $name, BlockBreakInfo $breakInfo){
-		parent::__construct($idInfo, $name . " Slab", $breakInfo);
+	public function __construct(BlockIdentifierFlattened $idInfo, string $name, BlockBreakInfo $breakInfo, ?NoteInstrument $noteblockInstrument = null){
+		parent::__construct($idInfo, $name . " Slab", $breakInfo, $noteblockInstrument ?? NoteInstrument::BASS_DRUM());
 		$this->slabType = SlabType::BOTTOM();
 	}
 

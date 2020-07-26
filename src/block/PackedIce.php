@@ -23,15 +23,13 @@ declare(strict_types=1);
 
 namespace pocketmine\block;
 
-use pocketmine\block\utils\note\ChimesInstrumentTrait;
 use pocketmine\item\Item;
+use pocketmine\world\sound\NoteInstrument;
 
 class PackedIce extends Opaque{
 
-	use ChimesInstrumentTrait;
-
-	public function __construct(BlockIdentifier $idInfo, string $name, ?BlockBreakInfo $breakInfo = null){
-		parent::__construct($idInfo, $name, $breakInfo ?? new BlockBreakInfo(0.5, BlockToolType::PICKAXE));
+	public function __construct(BlockIdentifier $idInfo, string $name, ?BlockBreakInfo $breakInfo = null, ?NoteInstrument $noteblockInstrument = null){
+		parent::__construct($idInfo, $name, $breakInfo ?? new BlockBreakInfo(0.5, BlockToolType::PICKAXE), $noteblockInstrument ?? NoteInstrument::CHIMES());
 	}
 
 	public function getFrictionFactor() : float{

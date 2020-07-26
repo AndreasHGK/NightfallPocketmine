@@ -23,15 +23,14 @@ declare(strict_types=1);
 
 namespace pocketmine\block;
 
-use pocketmine\block\utils\note\XylophoneInstrumentTrait;
 use pocketmine\block\utils\PillarRotationTrait;
 use pocketmine\item\ToolTier;
+use pocketmine\world\sound\NoteInstrument;
 
 class BoneBlock extends Opaque{
-	use XylophoneInstrumentTrait;
 	use PillarRotationTrait;
 
-	public function __construct(BlockIdentifier $idInfo, string $name, ?BlockBreakInfo $breakInfo = null){
-		parent::__construct($idInfo, $name, $breakInfo ?? new BlockBreakInfo(2.0, BlockToolType::PICKAXE, ToolTier::WOOD()->getHarvestLevel()));
+	public function __construct(BlockIdentifier $idInfo, string $name, ?BlockBreakInfo $breakInfo = null, ?NoteInstrument $noteblockInstrument = null){
+		parent::__construct($idInfo, $name, $breakInfo ?? new BlockBreakInfo(2.0, BlockToolType::PICKAXE, ToolTier::WOOD()->getHarvestLevel()), $noteblockInstrument ?? NoteInstrument::XYLOPHONE());
 	}
 }

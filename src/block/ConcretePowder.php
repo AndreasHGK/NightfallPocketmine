@@ -25,17 +25,16 @@ namespace pocketmine\block;
 
 use pocketmine\block\utils\Fallable;
 use pocketmine\block\utils\FallableTrait;
-use pocketmine\block\utils\note\SnareInstrumentTrait;
 use pocketmine\math\Facing;
+use pocketmine\world\sound\NoteInstrument;
 
 class ConcretePowder extends Opaque implements Fallable{
-	use SnareInstrumentTrait;
 	use FallableTrait {
 		onNearbyBlockChange as protected startFalling;
 	}
 
-	public function __construct(BlockIdentifier $idInfo, string $name, ?BlockBreakInfo $breakInfo = null){
-		parent::__construct($idInfo, $name, $breakInfo ?? new BlockBreakInfo(0.5, BlockToolType::SHOVEL));
+	public function __construct(BlockIdentifier $idInfo, string $name, ?BlockBreakInfo $breakInfo = null, ?NoteInstrument $noteblockInstrument = null){
+		parent::__construct($idInfo, $name, $breakInfo ?? new BlockBreakInfo(0.5, BlockToolType::SHOVEL), $noteblockInstrument ?? NoteInstrument::SNARE());
 	}
 
 	public function onNearbyBlockChange() : void{

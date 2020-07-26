@@ -23,15 +23,13 @@ declare(strict_types=1);
 
 namespace pocketmine\block;
 
-use pocketmine\block\utils\note\BassdrumInstrumentTrait;
 use pocketmine\item\Item;
+use pocketmine\world\sound\NoteInstrument;
 
 abstract class InfestedStone extends Opaque {
 
-	use BassdrumInstrumentTrait;
-
-	public function __construct(BlockIdentifier $idInfo, string $name, ?BlockBreakInfo $breakInfo = null){
-		parent::__construct($idInfo, $name, $breakInfo ?? new BlockBreakInfo(0.75));
+	public function __construct(BlockIdentifier $idInfo, string $name, ?BlockBreakInfo $breakInfo = null, ?NoteInstrument $noteblockInstrument = null){
+		parent::__construct($idInfo, $name, $breakInfo ?? new BlockBreakInfo(0.75), $noteblockInstrument ?? NoteInstrument::BASS_DRUM());
 	}
 
 	public function getDropsForCompatibleTool(Item $item) : array{

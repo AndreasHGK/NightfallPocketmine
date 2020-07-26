@@ -23,17 +23,15 @@ declare(strict_types=1);
 
 namespace pocketmine\block;
 
-use pocketmine\block\utils\note\PlingInstrumentTrait;
 use pocketmine\item\Item;
 use pocketmine\item\VanillaItems;
+use pocketmine\world\sound\NoteInstrument;
 use function mt_rand;
 
 class Glowstone extends Transparent{
 
-	use PlingInstrumentTrait;
-
-	public function __construct(BlockIdentifier $idInfo, string $name, ?BlockBreakInfo $breakInfo = null){
-		parent::__construct($idInfo, $name, $breakInfo ?? new BlockBreakInfo(0.3, BlockToolType::PICKAXE));
+	public function __construct(BlockIdentifier $idInfo, string $name, ?BlockBreakInfo $breakInfo = null, ?NoteInstrument $noteblockInstrument = null){
+		parent::__construct($idInfo, $name, $breakInfo ?? new BlockBreakInfo(0.3, BlockToolType::PICKAXE), $noteblockInstrument ?? NoteInstrument::PLING());
 	}
 
 	public function getLightLevel() : int{

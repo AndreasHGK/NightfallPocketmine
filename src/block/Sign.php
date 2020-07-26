@@ -25,7 +25,6 @@ namespace pocketmine\block;
 
 use pocketmine\block\tile\Sign as TileSign;
 use pocketmine\block\utils\BlockDataSerializer;
-use pocketmine\block\utils\note\DoubleBassInstrumentTrait;
 use pocketmine\block\utils\SignText;
 use pocketmine\event\block\SignChangeEvent;
 use pocketmine\item\Item;
@@ -35,14 +34,13 @@ use pocketmine\math\Vector3;
 use pocketmine\player\Player;
 use pocketmine\utils\TextFormat;
 use pocketmine\world\BlockTransaction;
+use pocketmine\world\sound\NoteInstrument;
 use function array_map;
 use function assert;
 use function floor;
 use function strlen;
 
 class Sign extends Transparent{
-
-	use DoubleBassInstrumentTrait;
 
 	/** @var BlockIdentifierFlattened */
 	protected $idInfo;
@@ -58,8 +56,8 @@ class Sign extends Transparent{
 	/** @var SignText */
 	protected $text;
 
-	public function __construct(BlockIdentifierFlattened $idInfo, string $name, ?BlockBreakInfo $breakInfo = null){
-		parent::__construct($idInfo, $name, $breakInfo ?? new BlockBreakInfo(1.0, BlockToolType::AXE));
+	public function __construct(BlockIdentifierFlattened $idInfo, string $name, ?BlockBreakInfo $breakInfo = null, ?NoteInstrument $noteblockInstrument = null){
+		parent::__construct($idInfo, $name, $breakInfo ?? new BlockBreakInfo(1.0, BlockToolType::AXE), $noteblockInstrument ?? NoteInstrument::DOUBLE_BASS());
 		$this->text = new SignText();
 	}
 

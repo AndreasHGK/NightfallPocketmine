@@ -24,25 +24,23 @@ declare(strict_types=1);
 namespace pocketmine\block;
 
 use pocketmine\block\utils\BlockDataSerializer;
-use pocketmine\block\utils\note\BassdrumInstrumentTrait;
 use pocketmine\item\Item;
 use pocketmine\math\AxisAlignedBB;
 use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
 use pocketmine\player\Player;
 use pocketmine\world\BlockTransaction;
+use pocketmine\world\sound\NoteInstrument;
 
 class EndPortalFrame extends Opaque{
-
-	use BassdrumInstrumentTrait;
 
 	/** @var int */
 	protected $facing = Facing::NORTH;
 	/** @var bool */
 	protected $eye = false;
 
-	public function __construct(BlockIdentifier $idInfo, string $name, ?BlockBreakInfo $breakInfo = null){
-		parent::__construct($idInfo, $name, $breakInfo ?? BlockBreakInfo::indestructible());
+	public function __construct(BlockIdentifier $idInfo, string $name, ?BlockBreakInfo $breakInfo = null, ?NoteInstrument $noteblockInstrument = null){
+		parent::__construct($idInfo, $name, $breakInfo ?? BlockBreakInfo::indestructible(), $noteblockInstrument ?? NoteInstrument::BASS_DRUM());
 	}
 
 	protected function writeStateToMeta() : int{

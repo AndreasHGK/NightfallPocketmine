@@ -66,10 +66,13 @@ class Block{
 	/** @var AxisAlignedBB[]|null */
 	protected $collisionBoxes = null;
 
+	/** @var NoteInstrument */
+	protected $noteblockInstrument;
+
 	/**
 	 * @param string          $name English name of the block type (TODO: implement translations)
 	 */
-	public function __construct(BlockIdentifier $idInfo, string $name, BlockBreakInfo $breakInfo){
+	public function __construct(BlockIdentifier $idInfo, string $name, BlockBreakInfo $breakInfo, ?NoteInstrument $noteblockInstrument = null){
 		if(($idInfo->getVariant() & $this->getStateBitmask()) !== 0){
 			throw new \InvalidArgumentException("Variant 0x" . dechex($idInfo->getVariant()) . " collides with state bitmask 0x" . dechex($this->getStateBitmask()));
 		}
@@ -77,6 +80,7 @@ class Block{
 		$this->fallbackName = $name;
 		$this->breakInfo = $breakInfo;
 		$this->pos = new Position(0, 0, 0, null);
+		$this->noteblockInstrument = $noteblockInstrument ?? NoteInstrument::PIANO();
 	}
 
 	public function __clone(){
@@ -418,7 +422,7 @@ class Block{
 	 * @return NoteInstrument
 	 */
 	public function getNoteblockInstrument() : NoteInstrument {
-		return NoteInstrument::PIANO();
+		return $this->noteblockInstrument;
 	}
 
 	/**

@@ -23,17 +23,15 @@ declare(strict_types=1);
 
 namespace pocketmine\block;
 
-use pocketmine\block\utils\note\BassdrumInstrumentTrait;
 use pocketmine\item\Item;
 use pocketmine\item\ToolTier;
 use pocketmine\item\VanillaItems;
 use pocketmine\math\Vector3;
 use pocketmine\player\Player;
+use pocketmine\world\sound\NoteInstrument;
 use function mt_rand;
 
 class RedstoneOre extends Opaque{
-
-	use BassdrumInstrumentTrait;
 
 	/** @var BlockIdentifierFlattened */
 	protected $idInfo;
@@ -41,8 +39,8 @@ class RedstoneOre extends Opaque{
 	/** @var bool */
 	protected $lit = false;
 
-	public function __construct(BlockIdentifierFlattened $idInfo, string $name, ?BlockBreakInfo $breakInfo = null){
-		parent::__construct($idInfo, $name, $breakInfo ?? new BlockBreakInfo(3.0, BlockToolType::PICKAXE, ToolTier::IRON()->getHarvestLevel()));
+	public function __construct(BlockIdentifierFlattened $idInfo, string $name, ?BlockBreakInfo $breakInfo = null, ?NoteInstrument $noteblockInstrument = null){
+		parent::__construct($idInfo, $name, $breakInfo ?? new BlockBreakInfo(3.0, BlockToolType::PICKAXE, ToolTier::IRON()->getHarvestLevel()), $noteblockInstrument ?? NoteInstrument::BASS_DRUM());
 	}
 
 	public function getId() : int{

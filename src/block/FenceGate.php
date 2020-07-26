@@ -24,7 +24,6 @@ declare(strict_types=1);
 namespace pocketmine\block;
 
 use pocketmine\block\utils\BlockDataSerializer;
-use pocketmine\block\utils\note\DoubleBassInstrumentTrait;
 use pocketmine\item\Item;
 use pocketmine\math\AxisAlignedBB;
 use pocketmine\math\Facing;
@@ -32,10 +31,9 @@ use pocketmine\math\Vector3;
 use pocketmine\player\Player;
 use pocketmine\world\BlockTransaction;
 use pocketmine\world\sound\DoorSound;
+use pocketmine\world\sound\NoteInstrument;
 
 class FenceGate extends Transparent{
-
-	use DoubleBassInstrumentTrait;
 
 	/** @var bool */
 	protected $open = false;
@@ -44,8 +42,8 @@ class FenceGate extends Transparent{
 	/** @var bool */
 	protected $inWall = false;
 
-	public function __construct(BlockIdentifier $idInfo, string $name, ?BlockBreakInfo $breakInfo = null){
-		parent::__construct($idInfo, $name, $breakInfo ?? new BlockBreakInfo(2.0, BlockToolType::AXE));
+	public function __construct(BlockIdentifier $idInfo, string $name, ?BlockBreakInfo $breakInfo = null, ?NoteInstrument $noteblockInstrument = null){
+		parent::__construct($idInfo, $name, $breakInfo ?? new BlockBreakInfo(2.0, BlockToolType::AXE), $noteblockInstrument ?? NoteInstrument::DOUBLE_BASS());
 	}
 
 	protected function writeStateToMeta() : int{

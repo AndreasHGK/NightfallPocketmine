@@ -23,17 +23,15 @@ declare(strict_types=1);
 
 namespace pocketmine\block;
 
-use pocketmine\block\utils\note\BassdrumInstrumentTrait;
+use pocketmine\world\sound\NoteInstrument;
 
 class Bedrock extends Opaque{
-
-	use BassdrumInstrumentTrait;
 
 	/** @var bool */
 	private $burnsForever = false;
 
-	public function __construct(BlockIdentifier $idInfo, string $name, ?BlockBreakInfo $breakInfo = null){
-		parent::__construct($idInfo, $name, $breakInfo ?? BlockBreakInfo::indestructible());
+	public function __construct(BlockIdentifier $idInfo, string $name, ?BlockBreakInfo $breakInfo = null, ?NoteInstrument $noteblockInstrument = null){
+		parent::__construct($idInfo, $name, $breakInfo ?? BlockBreakInfo::indestructible(), $noteblockInstrument ?? NoteInstrument::BASS_DRUM());
 	}
 
 	public function readStateFromData(int $id, int $stateMeta) : void{

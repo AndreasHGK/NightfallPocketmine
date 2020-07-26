@@ -23,22 +23,20 @@ declare(strict_types=1);
 
 namespace pocketmine\block;
 
-use pocketmine\block\utils\note\BassdrumInstrumentTrait;
 use pocketmine\item\ToolTier;
 use pocketmine\math\AxisAlignedBB;
 use pocketmine\math\Facing;
+use pocketmine\world\sound\NoteInstrument;
 
 class Wall extends Transparent{
-
-	use BassdrumInstrumentTrait;
 
 	/** @var bool[] facing => dummy */
 	protected $connections = [];
 	/** @var bool */
 	protected $up = false;
 
-	public function __construct(BlockIdentifier $idInfo, string $name, ?BlockBreakInfo $breakInfo = null){
-		parent::__construct($idInfo, $name, $breakInfo ?? new BlockBreakInfo(2.0, BlockToolType::PICKAXE, ToolTier::WOOD()->getHarvestLevel(), 30.0));
+	public function __construct(BlockIdentifier $idInfo, string $name, ?BlockBreakInfo $breakInfo = null, ?NoteInstrument $noteblockInstrument = null){
+		parent::__construct($idInfo, $name, $breakInfo ?? new BlockBreakInfo(2.0, BlockToolType::PICKAXE, ToolTier::WOOD()->getHarvestLevel(), 30.0), $noteblockInstrument ?? NoteInstrument::BASS_DRUM());
 	}
 
 	public function readStateFromWorld() : void{
