@@ -21,8 +21,18 @@
 
 declare(strict_types=1);
 
-namespace pocketmine\block\utils;
+namespace pocketmine\data\bedrock;
 
-final class BlockStateBinaryEncoder{
+use PHPUnit\Framework\TestCase;
+use pocketmine\block\utils\DyeColor;
 
+class DyeColorIdMapTest extends TestCase{
+
+	public function testAllColorsMapped() : void{
+		foreach(DyeColor::getAll() as $color){
+			$id = DyeColorIdMap::getInstance()->toId($color);
+			$color2 = DyeColorIdMap::getInstance()->fromId($id);
+			self::assertTrue($color->equals($color2));
+		}
+	}
 }

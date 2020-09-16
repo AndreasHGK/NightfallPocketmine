@@ -152,8 +152,8 @@ class NetworkSession{
 	/** @var EncryptionContext */
 	private $cipher;
 
-	/** @var PacketBatch|null */
-	private $sendBuffer;
+	/** @var Packet[] */
+	private $sendBuffer = [];
 
 	/**
 	 * @var \SplQueue|CompressBatchPromise[]
@@ -423,10 +423,7 @@ class NetworkSession{
 		$timings = Timings::getSendDataPacketTimings($packet);
 		$timings->startTiming();
 		try{
-			if($this->sendBuffer === null){
-				$this->sendBuffer = new PacketBatch();
-			}
-			$this->sendBuffer->putPacket($packet);
+			$this->sendBuffer[] = $packet;
 			$this->manager->scheduleUpdate($this); //schedule flush at end of tick
 		}finally{
 			$timings->stopTiming();
@@ -434,9 +431,9 @@ class NetworkSession{
 	}
 
 	private function flushSendBuffer(bool $immediate = false) : void{
-		if($this->sendBuffer !== null){
-			$promise = $this->server->prepareBatch($this->sendBuffer, $this->compressor, $immediate);
-			$this->sendBuffer = null;
+		if(count($this->sendBuffer) > 0){
+			$promise = $this->server->prepareBatch(PacketBatch::fromPackets(...$this->sendBuffer), $this->compressor, $immediate);
+			$this->sendBuffer = [];
 			$this->queueCompressed($promise, $immediate);
 		}
 	}
@@ -802,6 +799,13 @@ class NetworkSession{
 		$this->sendDataPacket(TextPacket::translation($key, $parameters));
 	}
 
+	/**
+	 * @param string[] $parameters
+	 */
+	public function onJukeboxPopup(string $key, array $parameters) : void{
+		$this->sendDataPacket(TextPacket::jukeboxPopup($key, $parameters));
+	}
+
 	public function onPopup(string $message) : void{
 		$this->sendDataPacket(TextPacket::popup($message));
 	}
@@ -951,9 +955,7 @@ class NetworkSession{
 			return true; //keep ticking until timeout
 		}
 
-		if($this->sendBuffer !== null){
-			$this->flushSendBuffer();
-		}
+		$this->flushSendBuffer();
 
 		return false;
 	}

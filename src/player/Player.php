@@ -102,7 +102,6 @@ use pocketmine\utils\TextFormat;
 use pocketmine\uuid\UUID;
 use pocketmine\world\ChunkListener;
 use pocketmine\world\ChunkListenerNoOpTrait;
-use pocketmine\world\ChunkLoader;
 use pocketmine\world\format\Chunk;
 use pocketmine\world\Position;
 use pocketmine\world\sound\EntityAttackNoDamageSound;
@@ -425,10 +424,6 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 	 */
 	public function getUniqueId() : UUID{
 		return parent::getUniqueId();
-	}
-
-	public function getPlayer() : ?Player{
-		return $this;
 	}
 
 	/**
@@ -955,6 +950,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 
 		if($b instanceof Bed){
 			$b->setOccupied();
+			$this->getWorld()->setBlock($pos, $b);
 		}
 
 		$this->sleeping = $pos;
@@ -971,6 +967,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 			$b = $this->getWorld()->getBlock($this->sleeping);
 			if($b instanceof Bed){
 				$b->setOccupied(false);
+				$this->getWorld()->setBlock($this->sleeping, $b);
 			}
 			(new PlayerBedLeaveEvent($this, $b))->call();
 
@@ -1565,6 +1562,9 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 		$target = $this->getWorld()->getBlock($pos);
 
 		$ev = new PlayerInteractEvent($this, $this->inventory->getItemInHand(), $target, null, $face, PlayerInteractEvent::LEFT_CLICK_BLOCK);
+		if($this->isSpectator()){
+			$ev->setCancelled();
+		}
 		$ev->call();
 		if($ev->isCancelled()){
 			return false;
@@ -1851,6 +1851,15 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 			$this->networkSession->onTranslatedChatMessage($this->getLanguage()->translateString($message, $parameters, "pocketmine."), $parameters);
 		}else{
 			$this->sendMessage($this->getLanguage()->translateString($message, $parameters));
+		}
+	}
+
+	/**
+	 * @param string[] $args
+	 */
+	public function sendJukeboxPopup(string $key, array $args) : void{
+		if($this->networkSession !== null){
+			$this->networkSession->onJukeboxPopup($key, $args);
 		}
 	}
 
@@ -2198,6 +2207,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 		$this->networkSession->syncMovement($pos, $yaw, $pitch, $mode);
 
 		$this->forceMoveSync = $pos->asVector3();
+		$this->ySize = 0;
 	}
 
 	/**

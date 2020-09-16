@@ -152,7 +152,7 @@ class Chunk{
 	 * Sets the blockstate at the given coordinate by internal ID.
 	 */
 	public function setFullBlock(int $x, int $y, int $z, int $block) : void{
-		$this->getSubChunk($y >> 4)->setFullBlock($x, $y & 0xf, $z, $block);
+		$this->getWritableSubChunk($y >> 4)->setFullBlock($x, $y & 0xf, $z, $block);
 		$this->dirtyFlags |= self::DIRTY_FLAG_TERRAIN;
 	}
 
@@ -178,12 +178,12 @@ class Chunk{
 	 * @param int $level 0-15
 	 */
 	public function setBlockSkyLight(int $x, int $y, int $z, int $level) : void{
-		$this->getSubChunk($y >> 4)->getBlockSkyLightArray()->set($x & 0xf, $y & 0x0f, $z & 0xf, $level);
+		$this->getWritableSubChunk($y >> 4)->getBlockSkyLightArray()->set($x & 0xf, $y & 0x0f, $z & 0xf, $level);
 	}
 
 	public function setAllBlockSkyLight(int $level) : void{
 		for($y = $this->subChunks->count() - 1; $y >= 0; --$y){
-			$this->getSubChunk($y)->setBlockSkyLightArray(LightArray::fill($level));
+			$this->getWritableSubChunk($y)->setBlockSkyLightArray(LightArray::fill($level));
 		}
 	}
 
@@ -209,12 +209,12 @@ class Chunk{
 	 * @param int $level 0-15
 	 */
 	public function setBlockLight(int $x, int $y, int $z, int $level) : void{
-		$this->getSubChunk($y >> 4)->getBlockLightArray()->set($x & 0xf, $y & 0x0f, $z & 0xf, $level);
+		$this->getWritableSubChunk($y >> 4)->getBlockLightArray()->set($x & 0xf, $y & 0x0f, $z & 0xf, $level);
 	}
 
 	public function setAllBlockLight(int $level) : void{
 		for($y = $this->subChunks->count() - 1; $y >= 0; --$y){
-			$this->getSubChunk($y)->setBlockLightArray(LightArray::fill($level));
+			$this->getWritableSubChunk($y)->setBlockLightArray(LightArray::fill($level));
 		}
 	}
 
@@ -260,15 +260,42 @@ class Chunk{
 	/**
 	 * Recalculates the heightmap for the whole chunk.
 	 *
-	 * @param \SplFixedArray|int[]  $lightFilters
-	 * @param \SplFixedArray|bool[] $lightDiffusers
-	 * @phpstan-param \SplFixedArray<int>  $lightFilters
-	 * @phpstan-param \SplFixedArray<bool> $lightDiffusers
+	 * @param \SplFixedArray|bool[] $directSkyLightBlockers
+	 * @phpstan-param \SplFixedArray<bool> $directSkyLightBlockers
 	 */
-	public function recalculateHeightMap(\SplFixedArray $lightFilters, \SplFixedArray $lightDiffusers) : void{
+	public function recalculateHeightMap(\SplFixedArray $directSkyLightBlockers) : void{
+		$maxSubChunkY = $this->subChunks->count() - 1;
+		for(; $maxSubChunkY >= 0; $maxSubChunkY--){
+			if(!$this->getSubChunk($maxSubChunkY)->isEmptyFast()){
+				break;
+			}
+		}
+		if($maxSubChunkY === -1){ //whole column is definitely empty
+			$this->setHeightMapArray(array_fill(0, 256, 0));
+			return;
+		}
+
 		for($z = 0; $z < 16; ++$z){
 			for($x = 0; $x < 16; ++$x){
-				$this->recalculateHeightMapColumn($x, $z, $lightFilters, $lightDiffusers);
+				$y = null;
+				for($subChunkY = $maxSubChunkY; $subChunkY >= 0; $subChunkY--){
+					$subHighestBlockY = $this->getSubChunk($subChunkY)->getHighestBlockAt($x, $z);
+					if($subHighestBlockY !== -1){
+						$y = ($subChunkY * 16) + $subHighestBlockY;
+						break;
+					}
+				}
+
+				if($y === null){ //no blocks in the column
+					$this->setHeightMap($x, $z, 0);
+				}else{
+					for(; $y >= 0; --$y){
+						if($directSkyLightBlockers[$this->getFullBlock($x, $y, $z)]){
+							$this->setHeightMap($x, $z, $y + 1);
+							break;
+						}
+					}
+				}
 			}
 		}
 	}
@@ -278,17 +305,15 @@ class Chunk{
 	 *
 	 * @param int $x 0-15
 	 * @param int $z 0-15
-	 * @param \SplFixedArray|int[]  $lightFilters
-	 * @param \SplFixedArray|bool[] $lightDiffusers
-	 * @phpstan-param \SplFixedArray<int>  $lightFilters
-	 * @phpstan-param \SplFixedArray<bool> $lightDiffusers
+	 * @param \SplFixedArray|bool[] $directSkyLightBlockers
+	 * @phpstan-param \SplFixedArray<bool> $directSkyLightBlockers
 	 *
 	 * @return int New calculated heightmap value (0-256 inclusive)
 	 */
-	public function recalculateHeightMapColumn(int $x, int $z, \SplFixedArray $lightFilters, \SplFixedArray $lightDiffusers) : int{
+	public function recalculateHeightMapColumn(int $x, int $z, \SplFixedArray $directSkyLightBlockers) : int{
 		$y = $this->getHighestBlockAt($x, $z);
 		for(; $y >= 0; --$y){
-			if($lightFilters[$state = $this->getFullBlock($x, $y, $z)] > 1 or $lightDiffusers[$state]){
+			if($directSkyLightBlockers[$this->getFullBlock($x, $y, $z)]){
 				break;
 			}
 		}
@@ -308,11 +333,18 @@ class Chunk{
 	 * TODO: fast adjacent light spread
 	 */
 	public function populateSkyLight(\SplFixedArray $lightFilters) : void{
-		$this->setAllBlockSkyLight(0);
+		$highestHeightMap = max($this->heightMap->getValues());
+		$lowestFullyLitSubChunk = ($highestHeightMap >> 4) + (($highestHeightMap & 0xf) !== 0 ? 1 : 0);
+		for($y = 0; $y < $lowestFullyLitSubChunk; $y++){
+			$this->getWritableSubChunk($y)->setBlockSkyLightArray(LightArray::fill(0));
+		}
+		for($y = $lowestFullyLitSubChunk, $yMax = $this->subChunks->count(); $y < $yMax; $y++){
+			$this->getWritableSubChunk($y)->setBlockSkyLightArray(LightArray::fill(15));
+		}
 
 		for($x = 0; $x < 16; ++$x){
 			for($z = 0; $z < 16; ++$z){
-				$y = ($this->subChunks->count() * 16) - 1;
+				$y = ($lowestFullyLitSubChunk * 16) - 1;
 				$heightMap = $this->getHeightMap($x, $z);
 
 				for(; $y >= $heightMap; --$y){
@@ -584,6 +616,13 @@ class Chunk{
 			return EmptySubChunk::getInstance(); //TODO: drop this and throw an exception here
 		}
 
+		return $this->subChunks[$y];
+	}
+
+	public function getWritableSubChunk(int $y) : SubChunk{
+		if($y < 0 || $y >= $this->subChunks->getSize()){
+			throw new \InvalidArgumentException("Cannot get subchunk $y for writing");
+		}
 		return $this->subChunks[$y];
 	}
 

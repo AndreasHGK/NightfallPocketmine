@@ -34,13 +34,11 @@ interface SubChunkInterface{
 
 	/**
 	 * Returns a non-authoritative bool to indicate whether the chunk contains any blocks.
-	 * This is a fast check, but may be inaccurate if the chunk has been modified and not garbage-collected.
+	 * This may report non-empty erroneously if the chunk has been modified and not garbage-collected.
 	 */
 	public function isEmptyFast() : bool;
 
 	public function getFullBlock(int $x, int $y, int $z) : int;
-
-	public function setFullBlock(int $x, int $y, int $z, int $block) : void;
 
 	/**
 	 * @return PalettedBlockArray[]
@@ -51,9 +49,5 @@ interface SubChunkInterface{
 
 	public function getBlockSkyLightArray() : LightArray;
 
-	public function setBlockSkyLightArray(LightArray $data) : void;
-
 	public function getBlockLightArray() : LightArray;
-
-	public function setBlockLightArray(LightArray $data) : void;
 }

@@ -894,6 +894,9 @@ class World implements ChunkManager{
 				$dz = mt_rand(-$randRange, $randRange);
 				$hash = World::chunkHash($dx + $chunkX, $dz + $chunkZ);
 				if(!isset($chunkTickList[$hash]) and isset($this->chunks[$hash])){
+					if(!$this->chunks[$hash]->isLightPopulated()){
+						continue;
+					}
 					//check adjacent chunks are loaded
 					for($cx = -1; $cx <= 1; ++$cx){
 						for($cz = -1; $cz <= 1; ++$cz){
@@ -1159,16 +1162,17 @@ class World implements ChunkManager{
 	}
 
 	public function updateAllLight(int $x, int $y, int $z) : void{
+		$blockFactory = BlockFactory::getInstance();
 		$this->timings->doBlockSkyLightUpdates->startTiming();
 		if($this->skyLightUpdate === null){
-			$this->skyLightUpdate = new SkyLightUpdate($this);
+			$this->skyLightUpdate = new SkyLightUpdate($this, $blockFactory->lightFilter, $blockFactory->blocksDirectSkyLight);
 		}
 		$this->skyLightUpdate->recalculateNode($x, $y, $z);
 		$this->timings->doBlockSkyLightUpdates->stopTiming();
 
 		$this->timings->doBlockLightUpdates->startTiming();
 		if($this->blockLightUpdate === null){
-			$this->blockLightUpdate = new BlockLightUpdate($this);
+			$this->blockLightUpdate = new BlockLightUpdate($this, $blockFactory->lightFilter, $blockFactory->light);
 		}
 		$this->blockLightUpdate->recalculateNode($x, $y, $z);
 		$this->timings->doBlockLightUpdates->stopTiming();

@@ -40,7 +40,7 @@
       "pocketmine/snooze": "^0.1.0",
       "pocketmine/classloader": "dev-master",
       "pocketmine/log-pthreads": "dev-master",
-      "pocketmine/callback-validator": "^1.0.1",
+      "pocketmine/callback-validator": "^1.0.2",
       "pocketmine/errorhandler": "^0.1.0",
       "pocketmine/uuid": "^0.1.0",
       "pocketmine/color": "^0.1.0",
@@ -50,7 +50,7 @@
       "respect/validation": "^2.0"
    },
    "require-dev": {
-      "phpstan/phpstan": "0.12.29",
+      "phpstan/phpstan": "0.12.42",
       "phpstan/phpstan-phpunit": "^0.12.6",
       "phpstan/phpstan-strict-rules": "^0.12.2",
       "phpunit/phpunit": "^9.2"
@@ -60,14 +60,18 @@
          "pocketmine\\": "src/"
       },
       "files": [
-         "src/CoreConstants.php",
-         "src/VersionInfo.php"
+         "src/CoreConstants.php"
       ]
    },
    "autoload-dev": {
       "psr-4": {
          "pocketmine\\": "tests/phpunit/",
          "pocketmine\\phpstan\\rules\\": "tests/phpstan/rules"
+      }
+   },
+   "config": {
+      "platform": {
+         "php": "7.3.0"
       }
    }
 }

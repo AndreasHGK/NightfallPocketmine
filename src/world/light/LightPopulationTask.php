@@ -61,7 +61,7 @@ class LightPopulationTask extends AsyncTask{
 		$chunk = FastChunkSerializer::deserialize($this->chunk);
 
 		$blockFactory = BlockFactory::getInstance();
-		$chunk->recalculateHeightMap($blockFactory->lightFilter, $blockFactory->diffusesSkyLight);
+		$chunk->recalculateHeightMap($blockFactory->blocksDirectSkyLight);
 		$chunk->populateSkyLight($blockFactory->lightFilter);
 		$chunk->setLightPopulated();
 
@@ -94,10 +94,10 @@ class LightPopulationTask extends AsyncTask{
 			$blockLightArrays = igbinary_unserialize($this->resultBlockLightArrays);
 
 			foreach($skyLightArrays as $y => $array){
-				$chunk->getSubChunk($y)->setBlockSkyLightArray($array);
+				$chunk->getWritableSubChunk($y)->setBlockSkyLightArray($array);
 			}
 			foreach($blockLightArrays as $y => $array){
-				$chunk->getSubChunk($y)->setBlockLightArray($array);
+				$chunk->getWritableSubChunk($y)->setBlockLightArray($array);
 			}
 			$chunk->setLightPopulated();
 		}
