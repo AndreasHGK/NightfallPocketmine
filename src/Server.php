@@ -549,7 +549,9 @@ class Server{
 
 	public function saveOfflinePlayerData(string $name, CompoundTag $nbtTag) : void{
 		$ev = new PlayerDataSaveEvent($nbtTag, $name);
-		$ev->setCancelled(!$this->shouldSavePlayerData());
+		if(!$this->shouldSavePlayerData()){
+			$ev->cancel();
+		}
 
 		$ev->call();
 
@@ -1470,7 +1472,7 @@ class Server{
 						"reportPaste" => base64_encode($dump->getEncodedData())
 					], 10, [], $postUrlError);
 
-					if($reply !== false and ($data = json_decode($reply)) !== null){
+					if($reply !== null and ($data = json_decode($reply->getBody())) !== null){
 						if(isset($data->crashId) and isset($data->crashUrl)){
 							$reportId = $data->crashId;
 							$reportUrl = $data->crashUrl;

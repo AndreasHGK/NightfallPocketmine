@@ -101,7 +101,10 @@ class Block{
 	}
 
 	public function asItem() : Item{
-		return ItemFactory::getInstance()->get($this->idInfo->getItemId(), $this->idInfo->getVariant());
+		return ItemFactory::getInstance()->get(
+			$this->idInfo->getItemId(),
+			$this->idInfo->getVariant() | ($this->writeStateToMeta() & ~$this->getNonPersistentStateBitmask())
+		);
 	}
 
 	public function getMeta() : int{
@@ -115,6 +118,10 @@ class Block{
 	 */
 	public function getStateBitmask() : int{
 		return 0;
+	}
+
+	public function getNonPersistentStateBitmask() : int{
+		return $this->getStateBitmask();
 	}
 
 	protected function writeStateToMeta() : int{
@@ -536,9 +543,12 @@ class Block{
 	/**
 	 * Called when an entity's bounding box clips inside this block's cell. Note that the entity may not be intersecting
 	 * with the collision box or bounding box.
+	 *
+	 * @return bool Whether the block is still the same after the intersection. If it changed (e.g. due to an explosive
+	 * being ignited), this should return false.
 	 */
-	public function onEntityInside(Entity $entity) : void{
-
+	public function onEntityInside(Entity $entity) : bool{
+		return true;
 	}
 
 	/**

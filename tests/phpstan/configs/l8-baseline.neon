@@ -476,7 +476,7 @@ parameters:
 			path: ../../../src/player/Player.php
 
 		-
-			message: "#^Cannot call method onTerrainReady\\(\\) on pocketmine\\\\network\\\\mcpe\\\\NetworkSession\\|null\\.$#"
+			message: "#^Cannot call method notifyTerrainReady\\(\\) on pocketmine\\\\network\\\\mcpe\\\\NetworkSession\\|null\\.$#"
 			count: 1
 			path: ../../../src/player/Player.php
 
@@ -497,7 +497,7 @@ parameters:
 
 		-
 			message: "#^Cannot call method sendDataPacket\\(\\) on pocketmine\\\\network\\\\mcpe\\\\NetworkSession\\|null\\.$#"
-			count: 1
+			count: 2
 			path: ../../../src/player/Player.php
 
 		-

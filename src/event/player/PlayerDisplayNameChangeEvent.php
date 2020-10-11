@@ -21,35 +21,28 @@
 
 declare(strict_types=1);
 
-namespace pocketmine\network\mcpe\protocol\types;
+namespace pocketmine\event\player;
 
-final class PersonaPieceTintColor{
+use pocketmine\player\Player;
 
-	public const PIECE_TYPE_PERSONA_EYES = "persona_eyes";
-	public const PIECE_TYPE_PERSONA_HAIR = "persona_hair";
-	public const PIECE_TYPE_PERSONA_MOUTH = "persona_mouth";
+class PlayerDisplayNameChangeEvent extends PlayerEvent{
 
 	/** @var string */
-	private $pieceType;
-	/** @var string[] */
-	private $colors;
+	private $oldName;
+	/** @var string */
+	private $newName;
 
-	/**
-	 * @param string[] $colors
-	 */
-	public function __construct(string $pieceType, array $colors){
-		$this->pieceType = $pieceType;
-		$this->colors = $colors;
+	public function __construct(Player $player, string $oldName, string $newName){
+		$this->player = $player;
+		$this->oldName = $oldName;
+		$this->newName = $newName;
 	}
 
-	public function getPieceType() : string{
-		return $this->pieceType;
+	public function getOldName() : string{
+		return $this->oldName;
 	}
 
-	/**
-	 * @return string[]
-	 */
-	public function getColors() : array{
-		return $this->colors;
+	public function getNewName() : string{
+		return $this->newName;
 	}
 }

@@ -52,6 +52,7 @@ use pocketmine\event\player\PlayerChangeSkinEvent;
 use pocketmine\event\player\PlayerChatEvent;
 use pocketmine\event\player\PlayerCommandPreprocessEvent;
 use pocketmine\event\player\PlayerDeathEvent;
+use pocketmine\event\player\PlayerDisplayNameChangeEvent;
 use pocketmine\event\player\PlayerExhaustEvent;
 use pocketmine\event\player\PlayerGameModeChangeEvent;
 use pocketmine\event\player\PlayerInteractEvent;
@@ -89,6 +90,7 @@ use pocketmine\nbt\tag\ListTag;
 use pocketmine\network\mcpe\NetworkSession;
 use pocketmine\network\mcpe\protocol\AnimatePacket;
 use pocketmine\network\mcpe\protocol\MovePlayerPacket;
+use pocketmine\network\mcpe\protocol\SetActorMotionPacket;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataCollection;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataFlags;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataProperties;
@@ -182,8 +184,6 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 
 	/** @var int */
 	protected $messageCounter = 2;
-	/** @var bool */
-	protected $removeFormat = true;
 
 	/** @var int */
 	protected $firstPlayed;
@@ -344,9 +344,6 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 		}
 
 		$this->keepMovement = true;
-		if($this->isOp()){
-			$this->setRemoveFormat(false);
-		}
 
 		$this->setNameTagVisible();
 		$this->setNameTagAlwaysVisible();
@@ -484,14 +481,6 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 		return $this->server;
 	}
 
-	public function getRemoveFormat() : bool{
-		return $this->removeFormat;
-	}
-
-	public function setRemoveFormat(bool $remove = true) : void{
-		$this->removeFormat = $remove;
-	}
-
 	public function getScreenLineHeight() : int{
 		return $this->lineHeight ?? 7;
 	}
@@ -622,7 +611,10 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 	}
 
 	public function setDisplayName(string $name) : void{
-		$this->displayName = $name;
+		$ev = new PlayerDisplayNameChangeEvent($this, $this->displayName, $name);
+		$ev->call();
+
+		$this->displayName = $ev->getNewName();
 	}
 
 	/**
@@ -799,7 +791,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 						}
 					}
 
-					$this->networkSession->onTerrainReady();
+					$this->networkSession->notifyTerrainReady();
 				}
 			});
 		}
@@ -1270,6 +1262,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 	public function setMotion(Vector3 $motion) : bool{
 		if(parent::setMotion($motion)){
 			$this->broadcastMotion();
+			$this->networkSession->sendDataPacket(SetActorMotionPacket::create($this->id, $motion));
 
 			return true;
 		}
@@ -1366,7 +1359,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 	public function chat(string $message) : bool{
 		$this->doCloseInventory();
 
-		$message = TextFormat::clean($message, $this->removeFormat);
+		$message = TextFormat::clean($message, false);
 		foreach(explode("\n", $message) as $messagePart){
 			if(trim($messagePart) !== "" and strlen($messagePart) <= 255 and $this->messageCounter-- > 0){
 				if(strpos($messagePart, './') === 0){
@@ -1428,7 +1421,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 
 		$ev = new PlayerItemUseEvent($this, $item, $directionVector);
 		if($this->hasItemCooldown($item) or $this->isSpectator()){
-			$ev->setCancelled();
+			$ev->cancel();
 		}
 
 		$ev->call();
@@ -1462,7 +1455,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 		if($slot instanceof ConsumableItem){
 			$ev = new PlayerItemConsumeEvent($this, $slot);
 			if($this->hasItemCooldown($slot)){
-				$ev->setCancelled();
+				$ev->cancel();
 			}
 			$ev->call();
 
@@ -1521,7 +1514,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 		$ev = new PlayerBlockPickEvent($this, $block, $item);
 		$existingSlot = $this->inventory->first($item);
 		if($existingSlot === -1 and $this->hasFiniteResources()){
-			$ev->setCancelled();
+			$ev->cancel();
 		}
 		$ev->call();
 
@@ -1563,7 +1556,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 
 		$ev = new PlayerInteractEvent($this, $this->inventory->getItemInHand(), $target, null, $face, PlayerInteractEvent::LEFT_CLICK_BLOCK);
 		if($this->isSpectator()){
-			$ev->setCancelled();
+			$ev->cancel();
 		}
 		$ev->call();
 		if($ev->isCancelled()){
@@ -1669,7 +1662,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 
 		$ev = new EntityDamageByEntityEvent($this, $entity, EntityDamageEvent::CAUSE_ENTITY_ATTACK, $heldItem->getAttackPoints());
 		if($this->isSpectator() or !$this->canInteract($entity->getLocation(), 8) or ($entity instanceof Player and !$this->server->getConfigGroup()->getConfigBool("pvp"))){
-			$ev->setCancelled();
+			$ev->cancel();
 		}
 
 		$meleeEnchantmentDamage = 0;
@@ -1751,7 +1744,9 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 
 	public function toggleFlight(bool $fly) : bool{
 		$ev = new PlayerToggleFlightEvent($this, $fly);
-		$ev->setCancelled(!$this->allowFlight);
+		if(!$this->allowFlight){
+			$ev->cancel();
+		}
 		$ev->call();
 		if($ev->isCancelled()){
 			return false;
@@ -1932,7 +1927,7 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 	/**
 	 * Kicks a player from the server
 	 *
-	 * @param TranslationContainer|string $quitMessage
+	 * @param TranslationContainer|string|null $quitMessage
 	 */
 	public function kick(string $reason = "", $quitMessage = null) : bool{
 		$ev = new PlayerKickEvent($this, $reason, $quitMessage ?? $this->getLeaveMessage());
@@ -1957,8 +1952,8 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 	 * Note for plugin developers: Prefer kick() instead of this method.
 	 * That way other plugins can have a say in whether the player is removed or not.
 	 *
-	 * @param string                      $reason Shown to the player, usually this will appear on their disconnect screen.
-	 * @param TranslationContainer|string $quitMessage Message to broadcast to online players (null will use default)
+	 * @param string                           $reason Shown to the player, usually this will appear on their disconnect screen.
+	 * @param TranslationContainer|string|null $quitMessage Message to broadcast to online players (null will use default)
 	 */
 	public function disconnect(string $reason, $quitMessage = null, bool $notify = true) : void{
 		if(!$this->isConnected()){
@@ -2175,9 +2170,9 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 			and $source->getCause() !== EntityDamageEvent::CAUSE_SUICIDE
 			and $source->getCause() !== EntityDamageEvent::CAUSE_VOID
 		){
-			$source->setCancelled();
+			$source->cancel();
 		}elseif($this->allowFlight and $source->getCause() === EntityDamageEvent::CAUSE_FALL){
-			$source->setCancelled();
+			$source->cancel();
 		}
 
 		parent::attack($source);
@@ -2190,6 +2185,14 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer{
 
 		$properties->setPlayerFlag(PlayerMetadataFlags::SLEEP, $this->sleeping !== null);
 		$properties->setBlockPos(EntityMetadataProperties::PLAYER_BED_POSITION, $this->sleeping ?? new Vector3(0, 0, 0));
+	}
+
+	public function sendData(?array $targets, ?array $data = null) : void{
+		if($targets === null){
+			$targets = $this->getViewers();
+			$targets[] = $this;
+		}
+		parent::sendData($targets, $data);
 	}
 
 	public function broadcastAnimation(Animation $animation, ?array $targets = null) : void{

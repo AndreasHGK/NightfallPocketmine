@@ -23,9 +23,9 @@ declare(strict_types=1);
 
 namespace pocketmine\network\mcpe\handler;
 
+use pocketmine\block\BaseSign;
 use pocketmine\block\BlockLegacyIds;
 use pocketmine\block\ItemFrame;
-use pocketmine\block\Sign;
 use pocketmine\block\utils\SignText;
 use pocketmine\entity\animation\ConsumingItemAnimation;
 use pocketmine\entity\InvalidSkinException;
@@ -390,7 +390,9 @@ class InGamePacketHandler extends PacketHandler{
 			}else{
 				$blocks[] = $blockPos;
 			}
-			$this->player->getLocation()->getWorld()->sendBlocks([$this->player], $blocks);
+			foreach($this->player->getWorld()->createBlockUpdatePackets($blocks) as $packet){
+				$this->session->sendDataPacket($packet);
+			}
 		}
 	}
 
@@ -506,22 +508,22 @@ class InGamePacketHandler extends PacketHandler{
 				return true;
 			case PlayerActionPacket::ACTION_START_SPRINT:
 				if(!$this->player->toggleSprint(true)){
-					$this->player->sendData($this->player);
+					$this->player->sendData([$this->player]);
 				}
 				return true;
 			case PlayerActionPacket::ACTION_STOP_SPRINT:
 				if(!$this->player->toggleSprint(false)){
-					$this->player->sendData($this->player);
+					$this->player->sendData([$this->player]);
 				}
 				return true;
 			case PlayerActionPacket::ACTION_START_SNEAK:
 				if(!$this->player->toggleSneak(true)){
-					$this->player->sendData($this->player);
+					$this->player->sendData([$this->player]);
 				}
 				return true;
 			case PlayerActionPacket::ACTION_STOP_SNEAK:
 				if(!$this->player->toggleSneak(false)){
-					$this->player->sendData($this->player);
+					$this->player->sendData([$this->player]);
 				}
 				return true;
 			case PlayerActionPacket::ACTION_START_GLIDE:
@@ -606,7 +608,7 @@ class InGamePacketHandler extends PacketHandler{
 		$nbt = $packet->namedtag->getRoot();
 		if(!($nbt instanceof CompoundTag)) throw new AssumptionFailedError("PHPStan should ensure this is a CompoundTag"); //for phpstorm's benefit
 
-		if($block instanceof Sign){
+		if($block instanceof BaseSign){
 			if(($textBlobTag = $nbt->getTag("Text")) instanceof StringTag){
 				try{
 					$text = SignText::fromBlob($textBlobTag->getValue());
@@ -616,7 +618,9 @@ class InGamePacketHandler extends PacketHandler{
 
 				try{
 					if(!$block->updateText($this->player, $text)){
-						$this->player->getWorld()->sendBlocks([$this->player], [$pos]);
+						foreach($this->player->getWorld()->createBlockUpdatePackets([$pos]) as $updatePacket){
+							$this->session->sendDataPacket($updatePacket);
+						}
 					}
 				}catch(\UnexpectedValueException $e){
 					throw BadPacketException::wrap($e);
@@ -815,23 +819,6 @@ class InGamePacketHandler extends PacketHandler{
 
 	public function handleLabTable(LabTablePacket $packet) : bool{
 		return false; //TODO
-	}
-
-	public function handleLevelSoundEvent(LevelSoundEventPacket $packet) : bool{
-		//TODO: we want to block out this packet completely, but we don't yet know the full scope of sounds that the client sends us from here
-		switch($packet->sound){
-			case LevelSoundEventPacket::SOUND_ATTACK:
-			case LevelSoundEventPacket::SOUND_ATTACK_NODAMAGE:
-			case LevelSoundEventPacket::SOUND_ATTACK_STRONG: //TODO: reassess this, seems like the regular attack is never used ??
-			case LevelSoundEventPacket::SOUND_HIT: //block punch, maybe entity attack too?
-			case LevelSoundEventPacket::SOUND_LAND:
-			case LevelSoundEventPacket::SOUND_FALL:
-			case LevelSoundEventPacket::SOUND_FALL_SMALL:
-			case LevelSoundEventPacket::SOUND_FALL_BIG:
-				return true;
-		}
-		$this->player->getWorld()->broadcastPacketToViewers($this->player->getPosition(), $packet);
-		return true;
 	}
 
 	public function handleNetworkStackLatency(NetworkStackLatencyPacket $packet) : bool{
